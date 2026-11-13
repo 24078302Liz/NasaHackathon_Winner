@@ -1,0 +1,16 @@
+# 密钥与本地环境变量（绝不提交）
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# IDE
+.idea/
+
+# 运行时数据（SQLite 数据库、接入的语料）
+data/
+*.db
+*.sqlite3

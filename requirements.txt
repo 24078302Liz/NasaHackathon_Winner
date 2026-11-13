@@ -1,0 +1,25 @@
+# ── Web 框架 ──
+fastapi
+uvicorn[standard]
+pydantic>=2.0
+pydantic-settings
+
+# ── 结构化存储（SQLAlchemy 抽象，当前 SQLite，可切 MySQL）──
+sqlalchemy>=2.0
+
+# ── LangGraph 智能体工作流 ──
+langgraph
+langchain-core
+langchain-openai          # DeepSeek 走 OpenAI 兼容接口
+
+# ── Milvus 向量库 ──
+pymilvus>=2.5.0
+
+# ── 稠密向量（HuggingFace BGE）──
+# 注意：sentence-transformers 会拉取 torch，体积较大；首次运行会从 HF 下载模型权重。
+sentence-transformers
+
+# ── 语料解析 ──
+pypdf                     # PDF 文本抽取
+python-docx               # docx 文本抽取
+beautifulsoup4            # HTML 文本抽取
