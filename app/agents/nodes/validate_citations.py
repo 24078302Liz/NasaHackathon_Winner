@@ -26,8 +26,10 @@ def validate_citations(state: GraphState) -> GraphState:
             "document_id": p["document_id"],
             "investigation_id": p["investigation_id"],
             "page": p.get("page"),
+            "test_id": p.get("test_id"),
             "source_url": p.get("source_url"),
             "text": p["text"][:300],
+            "retrieval_score": p.get("retrieval_score"),
         })
 
     state["citations"] = citations

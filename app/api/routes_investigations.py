@@ -16,25 +16,45 @@ from app.retrieval.store import (
 router = APIRouter()
 
 
-def _summary(row: Investigation) -> InvestigationSummary:
+def _summary(row: Investigation, materials: list[str] | None = None) -> InvestigationSummary:
     return InvestigationSummary(
         investigation_id=row.investigation_id,
         title=row.title,
         objective=row.objective,
         research_focus=row.research_focus,
+        materials=materials or [],
         source_url=row.source_url,
         doi=row.doi,
     )
 
 
 @router.get("/investigations", response_model=list[InvestigationSummary])
-def list_investigations(research_focus: str | None = None):
+def list_investigations(
+    research_focus: str | None = None,
+    material: str | None = None,
+):
     session = get_session()
     stmt = select(Investigation)
     if research_focus:
         stmt = stmt.where(Investigation.research_focus == research_focus)
+    if material:
+        matching_ids = select(ExperimentalCondition.investigation_id).where(
+            ExperimentalCondition.material.ilike(f"%{material.strip()}%")
+        )
+        stmt = stmt.where(Investigation.investigation_id.in_(matching_ids))
     rows = session.scalars(stmt).all()
-    return [_summary(r) for r in rows]
+    investigation_ids = [r.investigation_id for r in rows]
+    materials_by_id: dict[str, set[str]] = {iid: set() for iid in investigation_ids}
+    if investigation_ids:
+        conditions = session.scalars(
+            select(ExperimentalCondition).where(
+                ExperimentalCondition.investigation_id.in_(investigation_ids)
+            )
+        ).all()
+        for condition in conditions:
+            if condition.material:
+                materials_by_id[condition.investigation_id].add(condition.material)
+    return [_summary(r, sorted(materials_by_id[r.investigation_id])) for r in rows]
 
 
 @router.get("/investigations/{investigation_id}", response_model=InvestigationDetail)
@@ -61,6 +81,7 @@ def get_investigation(investigation_id: str):
         title=row.title,
         objective=row.objective,
         research_focus=row.research_focus,
+        materials=sorted({t.material for t in tests if t.material}),
         source_url=row.source_url,
         doi=row.doi,
         documents=[
@@ -68,6 +89,8 @@ def get_investigation(investigation_id: str):
                 "document_id": d.document_id,
                 "title": d.title,
                 "source_url": d.source_url,
+                "local_filename": d.local_filename,
+                "retrieval_date": d.retrieval_date,
                 "license_ref": d.license_ref,
             }
             for d in docs
@@ -90,7 +113,13 @@ def get_investigation(investigation_id: str):
         findings=[
             {
                 "finding_id": f.finding_id,
+                "test_id": f.test_id,
                 "finding_text": f.finding_text,
+                "supporting_evidence_ids": [
+                    item.strip()
+                    for item in (f.supporting_evidence_ids or "").split(",")
+                    if item.strip()
+                ],
                 "limitations": f.limitations,
             }
             for f in findings
