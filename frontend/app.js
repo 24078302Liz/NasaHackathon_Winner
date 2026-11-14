@@ -40,6 +40,10 @@ function visibleStudies() {
 }
 function renderCards(items = visibleStudies()) {
   const cards = $('#cards'); if (!cards) return;
+  const studyCount = String(studies.length).padStart(2, '0');
+  $('#overviewStudyCount').textContent = studyCount;
+  $('#libraryStudyCount').textContent = studyCount;
+  $('#navStudyCount').textContent = studies.length;
   cards.innerHTML = items.length ? items.map((s,i) => card(s,i+1)).join('') : '<div class="notice">No matching investigation. Try another question or clear the filters.</div>';
   $('#resultCount').textContent = `${items.length} investigation${items.length===1?'':'s'}`;
 }
