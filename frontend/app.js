@@ -12,9 +12,20 @@ const localFor = id => localStudies.find(s => keyFor(s.id) === keyFor(id) || key
 const readApi = async (path, options) => {
   if (!API_BASE) throw new Error('API 尚未配置');
   const response = await fetch(`${API_BASE}${path}`, {headers:{'Content-Type':'application/json', ...(options?.headers || {})}, ...options});
-  if (!response.ok) { let detail = ''; try { detail = (await response.json()).detail || ''; } catch {} throw new Error(detail || `HTTP ${response.status}`); }
+  if (!response.ok) {
+    let payload = {};
+    try { payload = await response.json(); } catch {}
+    const detail = payload.detail ?? payload.message ?? payload.error;
+    const message = typeof detail === 'string' ? detail : detail?.message || detail?.detail || `HTTP ${response.status}`;
+    throw Object.assign(new Error(message), {status:response.status, payload});
+  }
   return response.json();
 };
+function requestErrorMessage(error, action) {
+  if (error.status === 502) return `服务暂时不可用（502，${action}工作流失败）：${error.message}`;
+  if (error.status === 504) return `服务处理超时（504，${action}工作流超时）：${error.message}`;
+  return `${action}失败${error.status ? `（${error.status}）` : ''}：${error.message}`;
+}
 function toast(message) { const el = $('#toast'); if (el) { el.textContent = message; el.classList.add('show'); setTimeout(() => el.classList.remove('show'), 3200); } }
 function modeLabel() { const pill = $('.demo-pill'); if (pill) pill.innerHTML = `<span></span> ${searchMode === 'api' ? 'Live research API' : 'Curated reference mode'}`; }
 function studyFromApi(item) {
@@ -82,7 +93,7 @@ async function search() {
     const note = $('#searchNote'); note.hidden=false;
     const passages = result.evidence || [];
     note.innerHTML = `<strong>${esc(result.evidence_status || 'Research response')}</strong><p>${esc(result.answer || 'No answer could be generated from the retrieved evidence.')}</p><small>${(result.citations||[]).map(c=>`[${esc(c.evidence_id)}] ${esc(c.source_url||c.document_id)}`).join(' · ') || 'No citations returned.'}</small>${passages.length?`<div class="api-evidence"><strong>Retrieved evidence (${passages.length})</strong>${passages.map(p=>`<article><small>${esc(p.evidence_id)} · ${esc(p.investigation_id)} · ${esc(p.page ? `page ${p.page}` : p.document_id)}</small><p>${esc(p.text)}</p>${p.source_url?`<a href="${esc(p.source_url)}" target="_blank" rel="noopener noreferrer">Open source ↗</a>`:''}</article>`).join('')}</div>`:'<p>No source passages were retrieved for this question.'}`;
-  } catch (error) { const note=$('#searchNote'); note.hidden=false; note.innerHTML=`<strong>Research request failed</strong><p>${esc(error.message)}. Your question is unchanged.</p><button type="button" class="secondary" id="retrySearch">Retry search</button>`; toast(`搜索失败：${error.message}`); }
+  } catch (error) { const note=$('#searchNote'); note.hidden=false; const message=requestErrorMessage(error,'搜索'); note.innerHTML=`<strong>Research request failed</strong><p role="alert">${esc(message)}。你的问题已保留。</p><button type="button" class="secondary" id="retrySearch">Retry</button>`; toast(message); }
   finally { button.disabled=false; button.innerHTML='Search <span>→</span>'; }
 }
 function updateSelection() {
@@ -90,6 +101,73 @@ function updateSelection() {
   const bar=$('#compareBar'); bar.hidden=!selected.length;
   $('#selectionLabel').textContent=`${selected.length} investigation${selected.length===1?'':'s'} selected`;
   $('#openCompare').disabled=selected.length!==2;
+}
+const COMPARE_FIELDS = [
+  'objective','research_focus','materials_or_fuels','sample_geometry','oxygen_concentration',
+  'pressure','airflow','gravity_condition','measurements','reported_findings','limitations',
+];
+const COMPARE_FIELD_LABELS = {
+  objective:'Objective', research_focus:'Research focus', materials_or_fuels:'Materials or fuels',
+  sample_geometry:'Sample geometry', oxygen_concentration:'Oxygen concentration', pressure:'Pressure',
+  airflow:'Airflow', gravity_condition:'Gravity condition', measurements:'Measurements',
+  reported_findings:'Reported findings', limitations:'Limitations',
+};
+const COMPARE_FIELD_ALIASES = {
+  objective:['objective'], research_focus:['research_focus','research_area','focus'],
+  materials_or_fuels:['materials_or_fuels','materials_fuels','materials_and_fuels','material_fuel','materials','fuels','material','fuel'],
+  sample_geometry:['sample_geometry','geometry','sample_size'],
+  oxygen_concentration:['oxygen_concentration','oxygen','oxygen_level','oxygen_percentage'],
+  pressure:['pressure'], airflow:['airflow','air_flow','flow_rate'],
+  gravity_condition:['gravity_condition','gravity','gravity_level'],
+  measurements:['measurements','measurement','diagnostics'],
+  reported_findings:['reported_findings','findings','reported_finding','results'],
+  limitations:['limitations','limitation'],
+};
+const normalizedDimension = value => String(value || '').trim().toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_|_$/g,'');
+function comparisonValue(raw) {
+  const value = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw.value : raw;
+  if (value === null || value === undefined || value === '') return 'Not yet extracted';
+  const text = typeof value === 'string' ? value : String(value);
+  const unit = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw.unit : null;
+  return unit && !text.toLowerCase().includes(String(unit).toLowerCase()) ? `${text} ${unit}` : text;
+}
+function fieldAvailability(value, provided) {
+  if (['reported','not_reported','not_yet_extracted'].includes(provided)) return provided;
+  if (/not[ _]reported/i.test(value)) return 'not_reported';
+  if (/not[ _](yet[ _])?extracted|not extracted/i.test(value)) return 'not_yet_extracted';
+  return 'reported';
+}
+function normalizeCompareResult(result) {
+  const rows = Array.isArray(result?.comparison) ? result.comparison : Array.isArray(result) ? result : [];
+  const legacyRows = rows.some(row => row && Object.prototype.hasOwnProperty.call(row,'dimension'));
+  const sourceRecords = legacyRows ? [] : rows;
+  const requestedIds = selected.slice(0,2);
+  const records = requestedIds.map((id,index) => {
+    const local = byId(id) || {};
+    const sourceRecord = sourceRecords.find(record => record?.investigation_id === id) || sourceRecords[index] || {};
+    const fields = COMPARE_FIELDS.map(name => {
+      let raw;
+      if (legacyRows) {
+        const row = rows.find(item => COMPARE_FIELD_ALIASES[name].includes(normalizedDimension(item.dimension)));
+        raw = row?.[index === 0 ? 'id_a' : 'id_b'];
+      } else {
+        const aliases = COMPARE_FIELD_ALIASES[name].map(normalizedDimension);
+        raw = sourceRecord.fields?.find(field => aliases.includes(normalizedDimension(field.name)));
+      }
+      const value = comparisonValue(raw);
+      const evidenceIds = raw && typeof raw === 'object' && Array.isArray(raw.evidence_ids) ? raw.evidence_ids : [];
+      const availability = fieldAvailability(value, raw?.availability);
+      return {name, value, unit:null, availability, evidence_ids:evidenceIds};
+    });
+    return {
+      investigation_id:id,
+      title:sourceRecord.title || local.full || local.name || id,
+      source_url:sourceRecord.source_url || local.source?.url || '',
+      fields,
+    };
+  });
+  return {...(Array.isArray(result) ? {} : result), answer:result?.answer || '',
+    evidence_status:result?.evidence_status || 'unknown', comparison:records};
 }
 function renderCompare() {
   const records=[...studies];
@@ -100,10 +178,10 @@ function renderCompare() {
   (async()=>{
     try {
       if(!API_BASE) throw new Error('API not configured');
-      const result=await readApi('/api/compare',{method:'POST',body:JSON.stringify({id_a:selected[0],id_b:selected[1]})});
-      lastComparison=result; const [a,b]=result.comparison;
-      $('#comparison').innerHTML=`<div class="notice"><strong>${esc(result.evidence_status)}</strong><p>${esc(result.answer)}</p></div><div class="table-wrap"><table><thead><tr><th>Research field</th><th>${esc(a.title)}</th><th>${esc(b.title)}</th></tr></thead><tbody>${(a.fields||[]).map((f,i)=>`<tr><th>${esc(f.name)}</th><td>${esc(f.value)}<small>${esc(f.availability)}</small></td><td>${esc(b.fields?.[i]?.value || 'Not yet extracted')}<small>${esc(b.fields?.[i]?.availability || 'not_yet_extracted')}</small></td></tr>`).join('')}</tbody></table></div>`;
-    } catch(error) { $('#comparison').innerHTML=`<div class="notice" role="alert">${esc(error.message)}. Connect the backend and choose investigations present in its database. The comparison table is unavailable in curated mode. <button type="button" class="secondary" data-retry-compare>Retry comparison</button></div>`; }
+      const response=await readApi('/api/compare',{method:'POST',body:JSON.stringify({id_a:selected[0],id_b:selected[1]})});
+      const result=normalizeCompareResult(response); lastComparison=result; const [a,b]=result.comparison;
+      $('#comparison').innerHTML=`<div class="notice"><strong>${esc(result.evidence_status)}</strong><p>${esc(result.answer)}</p></div><div class="table-wrap"><table><thead><tr><th>Research field</th><th>${esc(a.title)}</th><th>${esc(b.title)}</th></tr></thead><tbody>${COMPARE_FIELDS.map((name,i)=>{const fa=a.fields[i],fb=b.fields[i];return `<tr><th>${esc(COMPARE_FIELD_LABELS[name])}</th><td>${esc(fa.value)}<small>${esc(fa.availability)}</small></td><td>${esc(fb.value)}<small>${esc(fb.availability)}</small></td></tr>`;}).join('')}</tbody></table></div>`;
+    } catch(error) { const message=requestErrorMessage(error,'对比'); $('#comparison').innerHTML=`<div class="notice" role="alert"><strong>Comparison request failed</strong><p>${esc(message)}。已保留所选调查。</p><button type="button" class="secondary" data-retry-compare>Retry</button></div>`; }
   })();
 }
 function renderSources() {
