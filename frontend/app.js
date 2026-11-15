@@ -113,11 +113,11 @@ const COMPARE_FIELD_LABELS = {
   reported_findings:'Reported findings', limitations:'Limitations',
 };
 const COMPARE_FIELD_ALIASES = {
-  objective:['objective'], research_focus:['research_focus','research_area','focus'],
-  materials_or_fuels:['materials_or_fuels','materials_fuels','materials_and_fuels','material_fuel','materials','fuels','material','fuel'],
+  objective:['objective','objectives'], research_focus:['research_focus','research_area','focus'],
+  materials_or_fuels:['materials_or_fuels','materials_fuels','materials_and_fuels','material_fuel','fuels_materials','materials','fuels','material','fuel'],
   sample_geometry:['sample_geometry','geometry','sample_size'],
   oxygen_concentration:['oxygen_concentration','oxygen','oxygen_level','oxygen_percentage'],
-  pressure:['pressure'], airflow:['airflow','air_flow','flow_rate'],
+  pressure:['pressure'], airflow:['airflow','air_flow','flow_rate','gas_flow','flow'],
   gravity_condition:['gravity_condition','gravity','gravity_level'],
   measurements:['measurements','measurement','diagnostics'],
   reported_findings:['reported_findings','findings','reported_finding','results'],
@@ -137,6 +137,13 @@ function fieldAvailability(value, provided) {
   if (/not[ _](yet[ _])?extracted|not extracted/i.test(value)) return 'not_yet_extracted';
   return 'reported';
 }
+function legacyComparisonValue(row, id, index, local) {
+  const directKey = index === 0 ? 'id_a' : 'id_b';
+  if (Object.prototype.hasOwnProperty.call(row,directKey)) return row[directKey];
+  const acceptedKeys = new Set([id,local.id,local.name,local.full].filter(Boolean).map(keyFor));
+  const match = Object.keys(row).find(key => key !== 'dimension' && acceptedKeys.has(keyFor(key)));
+  return match ? row[match] : undefined;
+}
 function normalizeCompareResult(result) {
   const rows = Array.isArray(result?.comparison) ? result.comparison : Array.isArray(result) ? result : [];
   const legacyRows = rows.some(row => row && Object.prototype.hasOwnProperty.call(row,'dimension'));
@@ -148,8 +155,9 @@ function normalizeCompareResult(result) {
     const fields = COMPARE_FIELDS.map(name => {
       let raw;
       if (legacyRows) {
-        const row = rows.find(item => COMPARE_FIELD_ALIASES[name].includes(normalizedDimension(item.dimension)));
-        raw = row?.[index === 0 ? 'id_a' : 'id_b'];
+        const aliases = COMPARE_FIELD_ALIASES[name].map(normalizedDimension);
+        const row = rows.find(item => aliases.includes(normalizedDimension(item.dimension)));
+        raw = row ? legacyComparisonValue(row,id,index,local) : undefined;
       } else {
         const aliases = COMPARE_FIELD_ALIASES[name].map(normalizedDimension);
         raw = sourceRecord.fields?.find(field => aliases.includes(normalizedDimension(field.name)));
@@ -169,6 +177,32 @@ function normalizeCompareResult(result) {
   return {...(Array.isArray(result) ? {} : result), answer:result?.answer || '',
     evidence_status:result?.evidence_status || 'unknown', comparison:records};
 }
+function markdownInline(value) {
+  return esc(value).replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>').replace(/`([^`]+)`/g,'<code>$1</code>');
+}
+function markdownAnswer(markdown) {
+  const lines=String(markdown || '').split(/\r?\n/), output=[];
+  let paragraph=[], list=[], index=0;
+  const flushParagraph=()=>{if(paragraph.length){output.push(`<p>${markdownInline(paragraph.join(' '))}</p>`);paragraph=[];}};
+  const flushList=()=>{if(list.length){output.push(`<ul>${list.map(item=>`<li>${markdownInline(item)}</li>`).join('')}</ul>`);list=[];}};
+  const cells=line=>line.trim().replace(/^\|/,'').replace(/\|$/,'').split('|').map(cell=>cell.trim());
+  while(index<lines.length){
+    const line=lines[index].trim();
+    if(!line){flushParagraph();flushList();index++;continue;}
+    if(line.includes('|') && index+1<lines.length && /^\s*\|?\s*:?-{3,}/.test(lines[index+1])){
+      flushParagraph();flushList();const headers=cells(line);index+=2;const rows=[];
+      while(index<lines.length && lines[index].includes('|')){rows.push(cells(lines[index]));index++;}
+      output.push(`<div class="table-wrap"><table><thead><tr>${headers.map(cell=>`<th>${markdownInline(cell)}</th>`).join('')}</tr></thead><tbody>${rows.map(row=>`<tr>${headers.map((_,cellIndex)=>`<td>${markdownInline(row[cellIndex] || '')}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`);
+      continue;
+    }
+    const heading=line.match(/^(#{1,3})\s+(.+)$/);
+    if(heading){flushParagraph();flushList();const level=Math.min(heading[1].length+2,5);output.push(`<h${level}>${markdownInline(heading[2])}</h${level}>`);index++;continue;}
+    const bullet=line.match(/^[-*]\s+(.+)$/);
+    if(bullet){flushParagraph();list.push(bullet[1]);index++;continue;}
+    flushList();paragraph.push(line);index++;
+  }
+  flushParagraph();flushList();return output.join('');
+}
 function renderCompare() {
   const records=[...studies];
   $('#compareSelectors').innerHTML=[0,1].map(i=>`<label class="select-box">INVESTIGATION ${i+1}<select data-slot="${i}"><option value="">Choose an investigation</option>${records.map(s=>`<option value="${esc(s.id)}" ${selected[i]===s.id?'selected':''}>${esc(s.name)}</option>`).join('')}</select></label>`).join('');
@@ -180,7 +214,7 @@ function renderCompare() {
       if(!API_BASE) throw new Error('API not configured');
       const response=await readApi('/api/compare',{method:'POST',body:JSON.stringify({id_a:selected[0],id_b:selected[1]})});
       const result=normalizeCompareResult(response); lastComparison=result; const [a,b]=result.comparison;
-      $('#comparison').innerHTML=`<div class="notice"><strong>${esc(result.evidence_status)}</strong><p>${esc(result.answer)}</p></div><div class="table-wrap"><table><thead><tr><th>Research field</th><th>${esc(a.title)}</th><th>${esc(b.title)}</th></tr></thead><tbody>${COMPARE_FIELDS.map((name,i)=>{const fa=a.fields[i],fb=b.fields[i];return `<tr><th>${esc(COMPARE_FIELD_LABELS[name])}</th><td>${esc(fa.value)}<small>${esc(fa.availability)}</small></td><td>${esc(fb.value)}<small>${esc(fb.availability)}</small></td></tr>`;}).join('')}</tbody></table></div>`;
+      $('#comparison').innerHTML=`<section class="notice"><strong>Evidence status: ${esc(result.evidence_status)}</strong><div class="compare-answer">${markdownAnswer(result.answer)}</div></section><div class="table-wrap"><table><thead><tr><th>Research field</th><th>${esc(a.title)}</th><th>${esc(b.title)}</th></tr></thead><tbody>${COMPARE_FIELDS.map((name,i)=>{const fa=a.fields[i],fb=b.fields[i];return `<tr><th>${esc(COMPARE_FIELD_LABELS[name])}</th><td>${esc(fa.value)}<small>${esc(fa.availability)}</small></td><td>${esc(fb.value)}<small>${esc(fb.availability)}</small></td></tr>`;}).join('')}</tbody></table></div>`;
     } catch(error) { const message=requestErrorMessage(error,'对比'); $('#comparison').innerHTML=`<div class="notice" role="alert"><strong>Comparison request failed</strong><p>${esc(message)}。已保留所选调查。</p><button type="button" class="secondary" data-retry-compare>Retry</button></div>`; }
   })();
 }
