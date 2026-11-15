@@ -6,7 +6,7 @@ Submit through https://www.spaceappschallenge.org/2026/ using your team's Projec
 
 Flame in Freefall is an English-language research dashboard for exploring NASA microgravity combustion studies. It retrieves source passages, generates cited summaries, ranks investigations by retrieval matches, and compares experimental conditions before conclusions. Missing measurements remain missing. Retrieval scores describe relevance, not material safety or the probability that a conclusion is true.
 
-The public frontend is https://winner-flame-in-freefall.vercel.app/. The backend was reported by the team to be local as of this review. Do not claim that live search works on the public frontend until an external-device test confirms it.
+The frontend preview is https://winner-flame-in-freefall.vercel.app/. The complete application can be demonstrated locally with a publicly accessible recording and repository. Public backend hosting is optional for this submission approach; the guidance verified here does not explicitly require it. Describe the preview and local demonstration accurately so reviewers know which features they can use directly.
 
 ## Sources and attribution
 
@@ -27,7 +27,7 @@ The flame graphic is a concept illustration, not an experiment photograph. Descr
 1. 0-5 seconds: state the research problem and show the investigation library.
 2. 5-14 seconds: ask a research question, show ranked investigations, and open a source passage.
 3. 14-24 seconds: compare two populated investigations and show experimental conditions and missing fields.
-4. 24-29 seconds: state the intended research use and the current deployment limitation.
+4. 24-29 seconds: state the intended research use and show the repository link.
 
 Use a recording of the real application. If the backend is local, say so. Alternatively provide no more than seven slides, including title and ending slides. Test the demo and project links in a private browser window without signing in.
 

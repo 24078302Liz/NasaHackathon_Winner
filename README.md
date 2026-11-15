@@ -240,9 +240,9 @@ docker-compose.milvus.yml  Local Milvus + etcd + MinIO stack
 
 ## Production considerations
 
-This repository demonstrates an enterprise-oriented architecture, but additional work is needed before a production deployment:
+The following items apply to optional production hosting, not submission eligibility. A local application demonstration can be shared through an accessible recording and repository:
 
-- Deploy the FastAPI service, Milvus, and structured database to managed/secured infrastructure; a local laptop API is not reachable from Vercel.
+- If offering live remote access, host FastAPI, Milvus, and the structured database on reachable infrastructure. A static Vercel frontend alone cannot run the local backend.
 - Configure HTTPS, secrets management, authentication/authorization if needed, rate limiting, and suitable network boundaries.
 - Add structured logging, metrics, tracing, alerting, and operational health/readiness checks. The current `/health` endpoint is a basic liveness response.
 - Extend the included deterministic regression tests with live-corpus checks, a formal migration system, CI checks, backup/restore procedures, and ingestion monitoring.

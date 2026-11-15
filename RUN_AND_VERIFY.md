@@ -16,7 +16,7 @@ python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 
 Open http://127.0.0.1:8000/ for the frontend and http://127.0.0.1:8000/docs for API documentation. FastAPI now serves the frontend and API together. The same-origin configuration marker selects the correct API automatically. A separately hosted static frontend still requires window.FLAME_API_BASE_URL in frontend/config.js.
 
-For a remote host, use its required bind address and port, persistent database storage, and an accessible Milvus service. Configure its HTTPS origin in frontend/config.js and include the frontend origin in the backend CORS_ORIGINS JSON array. These changes prepare hosting; they do not create a public deployment.
+Public backend hosting is optional. For submission, you can record the locally running application and share the recording and repository through accessible links. If you later choose remote hosting, configure its HTTPS origin in frontend/config.js and allow the frontend origin in CORS_ORIGINS.
 
 Before submitting, verify these flows:
 
@@ -26,7 +26,7 @@ Before submitting, verify these flows:
 - An explicitly restricted search with no matches does not silently use another investigation.
 - Compare two populated investigations. Check that values retain their source units and missing data remains marked.
 - Stop a required dependency and retry search. Expect a readable error, retained input, and a Retry action.
-- Open the public website from another device before describing it as a live deployment.
+- Open your recording and repository links in a private browser window to confirm reviewers can access them.
 
 Run deterministic regression checks without paid model calls:
 
