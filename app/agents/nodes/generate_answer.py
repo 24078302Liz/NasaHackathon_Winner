@@ -1,4 +1,4 @@
-"""生成带引用的答案节点（三段式：条件 / 发现 / 解读）。"""
+"""Generate cited answers covering conditions, findings, and interpretation."""
 from __future__ import annotations
 
 from app.agents.prompts import GENERATE_ANSWER_SYSTEM
@@ -16,8 +16,8 @@ def generate_answer(state: GraphState) -> GraphState:
     llm = get_llm(temperature=0.0)
     prompt = (
         GENERATE_ANSWER_SYSTEM
-        + "\n\n用户问题：" + state["question"]
-        + "\n\n证据段落：\n" + snippets
+        + "\n\nUser question: " + state["question"]
+        + "\n\nEvidence passages:\n" + snippets
     )
     raw = llm.invoke(prompt)
     answer = raw.content if hasattr(raw, "content") else str(raw)

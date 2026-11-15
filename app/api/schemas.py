@@ -1,4 +1,4 @@
-"""Pydantic 请求/响应模型。"""
+"""Pydantic request and response models."""
 from __future__ import annotations
 
 from pydantic import BaseModel
@@ -15,7 +15,7 @@ class CompareRequest(BaseModel):
 
 
 class Evidence(BaseModel):
-    """证据段落（citations 与 evidence 共用字段）。"""
+    """Fields shared by citations and retrieved evidence."""
 
     evidence_id: str
     document_id: str
@@ -30,7 +30,7 @@ class Evidence(BaseModel):
 
 class InvestigationRank(BaseModel):
     identity: str
-    investigation_id: str = ""  # 兼容前端旧字段名
+    investigation_id: str = ""  # Compatibility with the frontend field name.
     rank: int
     hits: int
     best_score: float

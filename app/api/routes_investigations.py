@@ -1,4 +1,4 @@
-"""调查浏览路由：GET /api/investigations 与 /api/investigations/{id}。"""
+"""Investigation list and detail endpoints."""
 from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException
@@ -43,7 +43,7 @@ def list_investigations(
     research_focus: str | None = None,
     material: str | None = None,
 ):
-    """调查列表；支持按研究焦点（research_focus，精确）和材料（material，大小写不敏感子串）过滤。"""
+    """Filter investigations by exact research focus or case-insensitive material substring."""
     session = get_session()
     stmt = select(Investigation)
     if research_focus:

@@ -1,4 +1,4 @@
-"""写 Milvus + SQLite：证据段落向量化入库、结构化数据写入。"""
+"""Index passage vectors in Milvus and structured records in SQLite."""
 from __future__ import annotations
 
 import csv
@@ -15,7 +15,7 @@ from app.retrieval.store import (
     upsert_conditions,
 )
 
-# 三个调查的种子元数据。source_url 需在语料接入阶段按 NASA 官方资源人工核对（PRD 8）。
+# Seed investigation metadata. Verify source URLs against official NASA resources during ingestion.
 SEED_INVESTIGATIONS = [
     {
         "investigation_id": "Fire-Incidents",
@@ -162,7 +162,7 @@ def upsert_document(
 
 
 def insert_passages(passages: list[dict]) -> int:
-    """向量化并写入 Milvus；sparse_vector 由 BM25 function 自动生成。"""
+    """Embed passages and write them to Milvus; BM25 generates sparse vectors."""
     if not passages:
         return 0
     col = get_collection()
@@ -196,7 +196,7 @@ def insert_passages(passages: list[dict]) -> int:
 
 
 def _parse_number(s: str | None) -> float | None:
-    """解析数值：处理范围 "21.5 - 21.7"（取中间值）、约数 "~ 21.5"、空值。"""
+    """Parse numeric text, range midpoints, approximate values, and empty cells."""
     if s is None:
         return None
     s = s.strip().replace("~", "").replace("≈", "").replace(",", "")
@@ -228,7 +228,7 @@ def _norm_key(s: str) -> str:
 
 
 def _find_col(columns: list[str], keywords: tuple[str, ...]) -> str | None:
-    """按关键词（小写子串）找列名，返回第一个匹配的列。"""
+    """Find the first column matching a lowercase keyword substring."""
     for kw in keywords:
         for c in columns:
             if kw in _norm_key(c):
@@ -242,10 +242,10 @@ def parse_experiment_csv(
     investigation_id: str,
     gravity_condition: str = "microgravity",
 ) -> list[dict]:
-    """解析 PSI 实验表 CSV，返回 ExperimentalCondition dict 列表。
+    """Parse PSI experiment CSV rows into ExperimentalCondition dictionaries.
 
-    用关键词模糊匹配列名（不同实验的 CSV 列名不同），提取核心字段
-    （material / oxygen / airflow / geometry），其余列存 extra_params JSON。
+    Match column names by keywords and extract material, oxygen, airflow, and geometry.
+    Store remaining columns as JSON in extra_params.
     """
     conditions: list[dict] = []
     with open(path, encoding="utf-8-sig", errors="replace", newline="") as f:
@@ -267,7 +267,7 @@ def parse_experiment_csv(
             pressure = row.get(pressure_col or "", "")
 
             if not sample or (not airflow and not o2 and not pressure):
-                continue  # 跳过注释行
+                continue  # Skip rows without a sample or condition values.
 
             o2_col_name = _norm_key(o2_col or "")
             oxygen_unit = (
@@ -312,7 +312,7 @@ def ingest_experiment_table(
     investigation_id: str,
     gravity_condition: str = "microgravity",
 ) -> int:
-    """解析实验表 CSV 并写入 SQLite ExperimentalCondition 表。"""
+    """Parse an experiment CSV and upsert its SQLite condition records."""
     conditions = parse_experiment_csv(
         path,
         investigation_id=investigation_id,

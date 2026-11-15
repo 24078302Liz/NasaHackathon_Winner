@@ -1,4 +1,4 @@
-"""节点函数汇总导出。"""
+"""Export workflow node functions."""
 from app.agents.nodes.analyze_query import analyze_query
 from app.agents.nodes.fallbacks import fallback_insufficient, fallback_invalid
 from app.agents.nodes.generate_answer import generate_answer

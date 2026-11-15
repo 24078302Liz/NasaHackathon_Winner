@@ -1,4 +1,4 @@
-"""Milvus 连接与集合访问的单例封装。"""
+"""Manage Milvus connections and collection access."""
 from __future__ import annotations
 
 from pymilvus import Collection, connections, utility
@@ -8,7 +8,7 @@ from app.retrieval import schema as milvus_schema
 
 
 def connect() -> None:
-    """幂等地建立到 Milvus 的连接。"""
+    """Establish a Milvus connection if one does not already exist."""
     try:
         if not connections.has_connection(settings.milvus_alias):
             connections.connect(
@@ -23,9 +23,9 @@ def connect() -> None:
 
 
 def get_collection(name: str | None = None, create_if_missing: bool = True) -> Collection:
-    """获取（必要时创建并加载）collection。
+    """Get a collection, optionally creating and loading it.
 
-    检索/写入统一走这里；Milvus 未启动或集合不存在时给出明确错误。
+    Retrieval and ingestion share this function; missing infrastructure raises an explicit error.
     """
     name = name or settings.milvus_collection
     connect()
@@ -36,6 +36,6 @@ def get_collection(name: str | None = None, create_if_missing: bool = True) -> C
             )
         return milvus_schema.create_collection(name)
     col = Collection(name)
-    milvus_schema.ensure_indexes(col)  # 幂等补建索引（修复历史 collection 缺 sparse 索引）
+    milvus_schema.ensure_indexes(col)  # Add missing indexes to existing collections.
     col.load()
     return col

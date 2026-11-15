@@ -1,4 +1,4 @@
-"""检索节点：调用混合检索，返回证据段落并按调查聚合排序。"""
+"""Retrieve passages and aggregate investigation rankings."""
 from __future__ import annotations
 
 from app.agents.state import GraphState, Passage
@@ -46,9 +46,9 @@ def _hit_to_passage(hit) -> Passage:
 
 
 def _rank_investigations(passages: list[Passage]) -> list[dict]:
-    """按调查聚合，返回文档要求的排序记录。
+    """Aggregate passages into the documented investigation ranking records.
 
-    字段：identity / rank / hits / best_score / score_label /
+    Fields: identity / rank / hits / best_score / score_label /
     matched_evidence_ids / relevance_explanation。
     """
     agg: dict[str, dict] = {}
@@ -77,11 +77,11 @@ def _rank_investigations(passages: list[Passage]) -> list[dict]:
     for rank, r in enumerate(ranked[:3], start=1):
         result.append({
             "identity": r["identity"],
-            "investigation_id": r["identity"],  # 兼容前端旧字段名
+            "investigation_id": r["identity"],  # Compatibility with the frontend field name.
             "rank": rank,
             "hits": r["hits"],
             "best_score": round(r["best_score"], 4),
-            "score_label": "retrieval_score",  # 明确标注为检索分数（非概率）
+            "score_label": "retrieval_score",  # Retrieval relevance, not probability.
             "matched_evidence_ids": r["matched_evidence_ids"],
             "relevance_explanation": " | ".join(r["snippets"]),
         })
@@ -95,7 +95,7 @@ def retrieve(state: GraphState) -> GraphState:
         top_k=settings.top_k,
     )
     if not hits and state.get("filters"):
-        # 过滤后无结果，回退到不过滤再检索一次（避免过滤条件误伤）
+        # Retry without filters if the filtered search returns no results.
         hits = hybrid_search(
             query=state["question"],
             filters=None,
@@ -108,7 +108,7 @@ def retrieve(state: GraphState) -> GraphState:
 
 
 def retrieve_compare(state: GraphState) -> GraphState:
-    """对比分支：对两个调查分别检索证据。"""
+    """Retrieve evidence separately for each selected investigation."""
     selected = state.get("selected_ids") or []
     passages: list[Passage] = []
     for iid in selected:

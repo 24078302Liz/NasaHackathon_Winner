@@ -1,4 +1,4 @@
-"""对比路由：POST /api/compare。"""
+"""Comparison endpoint: POST /api/compare."""
 from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException
@@ -27,7 +27,7 @@ async def compare(req: CompareRequest):
     id_b = id_map[req.id_b.lower()]
 
     initial: GraphState = {
-        # 直接注入对比意图，入口路由会跳到 retrieve_compare，跳过意图识别
+        # Inject comparison intent and IDs to skip query classification.
         "question": req.focus or f"Compare {id_a} and {id_b}",
         "question_type": "compare",
         "selected_ids": [id_a, id_b],

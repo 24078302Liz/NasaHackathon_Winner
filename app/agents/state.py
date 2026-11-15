@@ -1,11 +1,11 @@
-"""LangGraph 共享状态定义。"""
+"""Shared LangGraph state types."""
 from __future__ import annotations
 
 from typing import Literal, TypedDict
 
 
 class Passage(TypedDict, total=False):
-    """一条证据段落（来自 Milvus 检索命中）。"""
+    """One retrieved evidence passage from Milvus."""
 
     evidence_id: str
     document_id: str
@@ -27,29 +27,29 @@ class Passage(TypedDict, total=False):
 
 
 class GraphState(TypedDict, total=False):
-    # 输入
+    # Input
     question: str
     selected_ids: list[str]
 
-    # analyze_query 输出
+    # Query analysis output
     question_type: Literal["search", "compare", "invalid"]
     filters: dict
 
-    # retrieve 输出
+    # Retrieval output
     passages: list[Passage]
     ranked_investigations: list[dict]
 
-    # grade_evidence 输出
+    # Evidence grading output
     evidence_grade: Literal["sufficient", "insufficient"]
 
-    # generate 输出
+    # Generation output
     answer: str
     citations: list[dict]
     evidence_status: str
 
-    # compare 输出
+    # Comparison output
     comparison: list[dict]
 
-    # 控制
+    # Control fields
     error: str | None
     retry_count: int

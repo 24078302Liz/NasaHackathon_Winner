@@ -1,8 +1,8 @@
-"""结构化数据存储：SQLAlchemy 抽象（当前 SQLite，可切 MySQL）。
+"""SQLAlchemy structured storage, using SQLite by default.
 
-Milvus 存证据段落（文本 + 向量），SQLite 存权威结构化数据
+Milvus stores passage text and vectors; SQLite stores structured records.
 （Investigation / SourceDocument / ExperimentalCondition / ReportedFinding）。
-切换 MySQL 只需改 DATABASE_URL，无需改业务代码。
+Change DATABASE_URL and install the database driver to use another SQLAlchemy backend.
 """
 from __future__ import annotations
 
@@ -56,7 +56,7 @@ class ExperimentalCondition(Base):
     airflow_unit: Mapped[str | None] = mapped_column(String(16), nullable=True)
     gravity_condition: Mapped[str] = mapped_column(String(64))
     flow_direction: Mapped[str | None] = mapped_column(String(32), nullable=True)
-    extra_params: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON 存实验特定参数
+    extra_params: Mapped[str | None] = mapped_column(Text, nullable=True)  # Experiment-specific parameters as JSON.
 
 
 class ReportedFinding(Base):
@@ -66,7 +66,7 @@ class ReportedFinding(Base):
     investigation_id: Mapped[str] = mapped_column(String(64))
     test_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     finding_text: Mapped[str] = mapped_column(Text)
-    supporting_evidence_ids: Mapped[str] = mapped_column(Text)  # 逗号分隔的 evidence_id
+    supporting_evidence_ids: Mapped[str] = mapped_column(Text)  # Comma-separated evidence IDs.
     limitations: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
@@ -80,7 +80,7 @@ SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, futu
 
 
 def init_db() -> None:
-    """创建表；SQLite 场景自动创建数据库文件所在目录（避免 data/ 不存在时报错）。"""
+    """Create tables and the SQLite parent directory when needed."""
     if settings.database_url.startswith("sqlite:///"):
         import os
 
@@ -93,7 +93,7 @@ def init_db() -> None:
 
 
 def _migrate_schema(engine) -> None:
-    """轻量迁移：为已存在的表补缺失列（SQLite 的 create_all 不会改已有表）。"""
+    """Add missing SQLite columns; create_all does not alter existing tables."""
     from sqlalchemy import inspect, text
 
     inspector = inspect(engine)
@@ -121,9 +121,9 @@ def _fmt_measure(value, unit) -> str | None:
 
 
 def build_structured_comparison(id_a: str, id_b: str) -> list[dict]:
-    """生成两个调查的结构化对比行（FR04），缺失字段标 Not reported。
+    """Build structured comparison rows for two investigations (FR04).
 
-    返回列表，每行 {dimension, <id_a>: 值, <id_b>: 值}。
+    Return rows shaped as {dimension, <id_a>: value, <id_b>: value}.
     """
     session = get_session()
     inv_a = session.get(Investigation, id_a)
@@ -156,7 +156,7 @@ def build_structured_comparison(id_a: str, id_b: str) -> list[dict]:
         if not vals:
             return NOT_REPORTED
         if len(vals) > 5:
-            return ", ".join(vals[:5]) + f" 等 {len(vals)} 个值"
+            return ", ".join(vals[:5]) + f" ({len(vals)} values total)"
         return ", ".join(vals)
 
     def findings_text(findings):
@@ -185,11 +185,11 @@ def build_structured_comparison(id_a: str, id_b: str) -> list[dict]:
 
 
 def upsert_conditions(conditions: list[dict]) -> int:
-    """写入/更新实验条件记录（幂等，按 test_id upsert，批内去重）。"""
+    """Upsert conditions by test_id, deduplicating records within the batch."""
     session = get_session()
     seen: dict[str, dict] = {}
     for c in conditions:
-        seen[c["test_id"]] = c  # 同 test_id 保留最后一条
+        seen[c["test_id"]] = c  # Keep the last record for each test ID.
     for c in seen.values():
         existing = session.get(ExperimentalCondition, c["test_id"])
         if existing is None:

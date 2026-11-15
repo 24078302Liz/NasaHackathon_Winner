@@ -9,7 +9,7 @@ let saved = new Set(JSON.parse(localStorage.getItem('flame-saved') || '[]'));
 const byId = id => studies.find(s => s.id === id);
 const keyFor = id => String(id || '').toLowerCase().replace(/[^a-z0-9]/g, '');
 const readApi = async (path, options) => {
-  if (!API_BASE) throw new Error('API 尚未配置');
+  if (!API_BASE) throw new Error('The API URL is not configured');
   const response = await fetch(`${API_BASE}${path}`, {headers:{'Content-Type':'application/json', ...(options?.headers || {})}, ...options});
   if (!response.ok) {
     let payload = {};
@@ -21,9 +21,9 @@ const readApi = async (path, options) => {
   return response.json();
 };
 function requestErrorMessage(error, action) {
-  if (error.status === 502) return `服务暂时不可用（502，${action}工作流失败）：${error.message}`;
-  if (error.status === 504) return `服务处理超时（504，${action}工作流超时）：${error.message}`;
-  return `${action}失败${error.status ? `（${error.status}）` : ''}：${error.message}`;
+  if (error.status === 502) return `Service unavailable (502, ${action} workflow failed): ${error.message}`;
+  if (error.status === 504) return `Request timed out (504, ${action} workflow timed out): ${error.message}`;
+  return `${action} failed${error.status ? ` (${error.status})` : ''}: ${error.message}`;
 }
 function toast(message) { const el = $('#toast'); if (el) { el.textContent = message; el.classList.add('show'); setTimeout(() => el.classList.remove('show'), 3200); } }
 function modeLabel() { const pill = $('.demo-pill'); if (pill) pill.innerHTML = `<span></span> ${libraryLoading ? 'Connecting to research API…' : libraryError ? 'Research API unavailable' : 'Live research API'}`; }
@@ -64,7 +64,7 @@ async function renderDetail(id) {
   let record = s.api || null;
   if (API_BASE) {
     try { record = await readApi(`/api/investigations/${encodeURIComponent(id)}`); s = {...s, ...record}; }
-    catch (error) { toast(`详情暂时无法读取：${error.message}`); }
+    catch (error) { toast(`Unable to load details: ${error.message}`); }
   }
   const facts = [['Objective',s.objective],['Research focus',s.api?.research_focus || s.purpose],['Materials',s.materials || s.api?.materials?.join(', ') || 'Not yet extracted'],['Experimental setting',s.setting || 'See linked NASA source'],['Hardware',s.hardware || 'Not yet extracted']];
   const detail = $('#detailContent');
@@ -78,9 +78,9 @@ async function loadLibrary() {
   libraryLoading = true; libraryError = null; modeLabel(); renderCards();
   try {
     const records = await readApi('/api/investigations');
-    if (!Array.isArray(records)) throw new Error('调查列表 API 返回格式无效');
+    if (!Array.isArray(records)) throw new Error('The investigations API returned an invalid response');
     studies = records.map(studyFromApi);
-  } catch (error) { studies=[]; libraryError=requestErrorMessage(error,'读取调查列表'); toast(libraryError); }
+  } catch (error) { studies=[]; libraryError=requestErrorMessage(error,'Loading investigations'); toast(libraryError); }
   finally { libraryLoading=false; modeLabel(); renderCards(); }
 }
 async function search() {
@@ -94,7 +94,7 @@ async function search() {
     const note = $('#searchNote'); note.hidden=false;
     const passages = result.evidence || [];
     note.innerHTML = `<strong>${esc(result.evidence_status || 'Research response')}</strong><p>${esc(result.answer || 'No answer could be generated from the retrieved evidence.')}</p><small>${(result.citations||[]).map(c=>`[${esc(c.evidence_id)}] ${esc(c.source_url||c.document_id)}`).join(' · ') || 'No citations returned.'}</small>${passages.length?`<div class="api-evidence"><strong>Retrieved evidence (${passages.length})</strong>${passages.map(p=>`<article><small>${esc(p.evidence_id)} · ${esc(p.investigation_id)} · ${esc(p.page ? `page ${p.page}` : p.document_id)}</small><p>${esc(p.text)}</p>${p.source_url?`<a href="${esc(p.source_url)}" target="_blank" rel="noopener noreferrer">Open source ↗</a>`:''}</article>`).join('')}</div>`:'<p>No source passages were retrieved for this question.'}`;
-  } catch (error) { const note=$('#searchNote'); note.hidden=false; const message=requestErrorMessage(error,'搜索'); note.innerHTML=`<strong>Research request failed</strong><p role="alert">${esc(message)}。你的问题已保留。</p><button type="button" class="secondary" id="retrySearch">Retry</button>`; toast(message); }
+  } catch (error) { const note=$('#searchNote'); note.hidden=false; const message=requestErrorMessage(error,'Search'); note.innerHTML=`<strong>Research request failed</strong><p role="alert">${esc(message)}. Your question has been preserved.</p><button type="button" class="secondary" id="retrySearch">Retry</button>`; toast(message); }
   finally { button.disabled=false; button.innerHTML='Search <span>→</span>'; }
 }
 function updateSelection() {
@@ -216,7 +216,7 @@ function renderCompare() {
       const response=await readApi('/api/compare',{method:'POST',body:JSON.stringify({id_a:selected[0],id_b:selected[1]})});
       const result=normalizeCompareResult(response); lastComparison=result; const [a,b]=result.comparison;
       $('#comparison').innerHTML=`<section class="notice"><strong>Evidence status: ${esc(result.evidence_status)}</strong><div class="compare-answer">${markdownAnswer(result.answer)}</div></section><div class="table-wrap"><table><thead><tr><th>Research field</th><th>${esc(a.title)}</th><th>${esc(b.title)}</th></tr></thead><tbody>${COMPARE_FIELDS.map((name,i)=>{const fa=a.fields[i],fb=b.fields[i];return `<tr><th>${esc(COMPARE_FIELD_LABELS[name])}</th><td>${esc(fa.value)}<small>${esc(fa.availability)}</small></td><td>${esc(fb.value)}<small>${esc(fb.availability)}</small></td></tr>`;}).join('')}</tbody></table></div>`;
-    } catch(error) { const message=requestErrorMessage(error,'对比'); $('#comparison').innerHTML=`<div class="notice" role="alert"><strong>Comparison request failed</strong><p>${esc(message)}。已保留所选调查。</p><button type="button" class="secondary" data-retry-compare>Retry</button></div>`; }
+    } catch(error) { const message=requestErrorMessage(error,'Comparison'); $('#comparison').innerHTML=`<div class="notice" role="alert"><strong>Comparison request failed</strong><p>${esc(message)}. Your selected investigations have been preserved.</p><button type="button" class="secondary" data-retry-compare>Retry</button></div>`; }
   })();
 }
 function renderSources() {

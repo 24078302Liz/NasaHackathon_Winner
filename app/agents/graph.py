@@ -1,4 +1,4 @@
-"""LangGraph 图的组装与编译（模块级单例，进程内共享）。"""
+"""Build and compile the process-wide LangGraph workflow."""
 from __future__ import annotations
 
 from langgraph.graph import END, START, StateGraph
@@ -8,7 +8,7 @@ from app.agents.state import GraphState
 
 
 def route_entry(state: GraphState) -> str:
-    """入口路由：compare 端点已带 question_type 与 selected_ids 时直接进对比分支。"""
+    """Route comparison requests with selected IDs directly to comparison retrieval."""
     if state.get("question_type") == "compare" and len(state.get("selected_ids") or []) >= 2:
         return "retrieve_compare"
     if state.get("question_type") == "invalid":

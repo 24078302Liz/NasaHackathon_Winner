@@ -1,7 +1,7 @@
-"""分块：按段落边界切分，保留 provenance。
+"""Split text at paragraph boundaries and preserve provenance.
 
-说明：当前按段落切分，evidence_id 用 document_id + 序号。
-后续若需要精确到 PDF 页码，可在 loaders 里保留分页信息，把 page 传给 chunker。
+Evidence IDs combine the document ID and chunk sequence number.
+For PDF page references, preserve page metadata in the loader and pass it to the chunker.
 """
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ OVERLAP = 150
 
 
 def _split_long(text: str, max_chars: int) -> list[str]:
-    """把超长文本硬切成不超过 max_chars 的块。"""
+    """Split long text into pieces no larger than max_chars."""
     parts = []
     while len(text) > max_chars:
         parts.append(text[:max_chars])
@@ -35,7 +35,7 @@ def chunk_text(
     buf = ""
     for para in paragraphs:
         if len(para) > MAX_CHARS:
-            # 超长段落：先 flush buf，再硬切成多个块（避免超过 Milvus 字段长度限制）
+            # Flush buffered text before splitting a paragraph that exceeds the size limit.
             if buf.strip():
                 chunks.append(_make(buf, document_id, investigation_id, source_url, len(chunks)))
                 buf = ""
@@ -45,7 +45,7 @@ def chunk_text(
 
         if buf and len(buf) + len(para) + 1 > MAX_CHARS:
             chunks.append(_make(buf, document_id, investigation_id, source_url, len(chunks)))
-            # 简单重叠：保留末尾 OVERLAP 字符，缓解跨块语义断裂
+            # Retain the last OVERLAP characters to preserve context between chunks.
             buf = buf[-OVERLAP:] + "\n\n" + para
         else:
             buf = (buf + "\n\n" + para).strip()

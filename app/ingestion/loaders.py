@@ -1,4 +1,4 @@
-"""语料解析：PDF / docx / HTML / txt 文本抽取。"""
+"""Extract text from PDF, DOCX, HTML, and text documents."""
 from __future__ import annotations
 
 import os
@@ -38,7 +38,7 @@ def _extract_html(path: str) -> str:
 
     with open(path, encoding="utf-8", errors="replace") as f:
         soup = BeautifulSoup(f.read(), "html.parser")
-    # 去掉非正文标签，避免导航/脚本/样式干扰检索
+    # Remove non-content tags before retrieving body text.
     for tag in soup(["script", "style", "nav", "footer", "header"]):
         tag.decompose()
     return soup.get_text("\n")

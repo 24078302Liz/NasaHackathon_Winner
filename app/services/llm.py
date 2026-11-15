@@ -1,4 +1,4 @@
-"""LLM 客户端封装：DeepSeek 经 OpenAI 兼容接口。"""
+"""LLM client factories for DeepSeek through an OpenAI-compatible API."""
 from __future__ import annotations
 
 from langchain_openai import ChatOpenAI
@@ -12,7 +12,7 @@ def get_llm(
     temperature: float = 0.0,
     timeout: float | None = None,
 ) -> ChatOpenAI:
-    """主模型：摘要 / 对比生成。"""
+    """Create the model used for answers and comparisons."""
     return ChatOpenAI(
         model=model or settings.llm_model,
         api_key=settings.llm_api_key,
@@ -24,5 +24,5 @@ def get_llm(
 
 
 def get_small_llm(**kwargs) -> ChatOpenAI:
-    """小模型：意图识别 / 证据打分（默认同 DeepSeek 低成本档，可单独配置）。"""
+    """Create the configurable model used for query analysis and evidence grading."""
     return get_llm(model=settings.small_model, **kwargs)

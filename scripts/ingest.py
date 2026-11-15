@@ -1,12 +1,12 @@
-"""一键接入语料：PDF（unstructured hi_res）/ docx / txt / md / html → 切片 → 写 Milvus + SQLite。
+"""Import document passages into Milvus and structured records into SQLite.
 
-用法（在 backend/ 目录下）：
+Usage from the repository root:
     python scripts/ingest.py --source data/sources
     python scripts/ingest.py --source data/saffire --investigation Saffire
 
-- PDF：unstructured 路径（版面分析 → 过滤/表格/标题栈/清洗 → chunk_by_title 切片）
-- 其他格式：loaders 抽文本 → chunker 分块
-- 默认按文件名关键字自动识别调查；识别不了用 --investigation 显式指定
+- The optional PDF helper performs layout analysis and title-aware chunking.
+- Other supported documents use the plain-text loaders and chunker.
+- Infer investigations from paths, or specify --investigation explicitly.
 """
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ import sys
 from datetime import date
 from pathlib import Path
 
-# 让 `python scripts/ingest.py` 也能 import app.*（把 backend/ 加入 sys.path）
+# Allow this CLI to import app modules from the repository root.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from app.ingestion.chunker import chunk_text
@@ -31,7 +31,7 @@ from app.retrieval.store import init_db
 
 SUPPORTED_EXTS = {".pdf", ".docx", ".md", ".html", ".htm"}
 
-# 文件名关键字 → investigation 映射（按顺序匹配，broadest 的 "bass" 放最后）。
+# Match specific investigation keywords before the broader bass keyword.
 SOURCE_KEYWORDS = {
     "Fire-Equipment": ["fire detector", "fireman", "air tanks", "fire attire"],
     "Fire-Incidents": ["apollo", "mir", "incident"],
@@ -47,7 +47,7 @@ INVESTIGATION_IDS = {
     "Fire-Incidents", "Fire-Equipment",
 }
 
-# NASA PSI 实验编号 → 调查名 映射（PSI 顶层文件夹名如 PSI-117）
+# Map NASA PSI directory identifiers to investigation names.
 PSI_ID_MAP = {
     "psi-25": "BASS-II",
     "psi-69": "FLEX",
@@ -57,8 +57,8 @@ PSI_ID_MAP = {
 
 
 def guess_investigation(name: str) -> str | None:
-    """按名字（文件名或目录名）判断调查：PSI 编号映射 > 精确匹配调查名 > 关键字匹配。"""
-    lower = name.lower().replace("_", " ")  # 下划线也当空格，统一匹配
+    """Identify an investigation by PSI identifier, exact name, then keywords."""
+    lower = name.lower().replace("_", " ")  # Normalize underscores to spaces.
     if lower in PSI_ID_MAP:
         return PSI_ID_MAP[lower]
     for inv in INVESTIGATION_IDS:
@@ -71,12 +71,12 @@ def guess_investigation(name: str) -> str | None:
 
 
 def guess_from_path(path: Path, source_dir: str) -> str | None:
-    """优先用目录名判断调查（一个实验一个文件夹），兜底用文件名。"""
+    """Prefer parent directory names, then fall back to the filename."""
     try:
         rel = path.relative_to(source_dir)
     except ValueError:
         rel = path
-    for part in rel.parts[:-1]:  # 目录部分（不含文件名）
+    for part in rel.parts[:-1]:  # Directory components, excluding the filename.
         inv = guess_investigation(part)
         if inv:
             return inv
@@ -96,9 +96,9 @@ def _document_id(investigation_id: str, stem: str) -> str:
 
 
 def _has_text_layer(path: Path) -> bool:
-    """检查 PDF 是否有文本层（前 3 页有文字即视为有）。
+    """Check the first three PDF pages for extractable text.
 
-    有文本层 → 本地 pypdf 快速提取（免费、快）；无文本层 → 扫描件，需 Transform hi_res OCR。
+    Text PDFs use local pypdf extraction; scanned documents need OCR processing.
     """
     import fitz
 
@@ -113,7 +113,7 @@ def _has_text_layer(path: Path) -> bool:
 
 
 def ingest_pdf(path: Path, investigation_id: str) -> tuple[int, str]:
-    """PDF：unstructured 路径。返回 (写入 passage 数, document_id)。"""
+    """Process PDF layout and return the passage count and document ID."""
     document_id = _document_id(investigation_id, path.stem)
     clean_elements = process_pdf(
         str(path),
@@ -136,7 +136,7 @@ def ingest_pdf(path: Path, investigation_id: str) -> tuple[int, str]:
 
 
 def ingest_plain(path: Path, investigation_id: str) -> tuple[int, str]:
-    """docx/txt/md/html：loaders + chunker 路径。返回 (写入 passage 数, document_id)。"""
+    """Extract plain document text and return the passage count and document ID."""
     document_id = _document_id(investigation_id, path.stem)
     text = extract_text(str(path))
     chunks = chunk_text(
@@ -164,7 +164,7 @@ def main(source_dir: str, investigation: str | None, recursive: bool) -> None:
             continue
 
         if ext == ".csv":
-            # 实验表 CSV → ExperimentalCondition（结构化数据，不写 Milvus）
+            # Import experiment CSV rows into SQLite rather than the vector index.
             try:
                 n = ingest_experiment_table(str(path), investigation_id=investigation_id)
                 print(f"[experiment] {fname} -> {n} conditions")
@@ -179,11 +179,11 @@ def main(source_dir: str, investigation: str | None, recursive: bool) -> None:
         print(f"[ingest] {fname} -> {investigation_id}")
         try:
             if ext == ".pdf" and _has_text_layer(path):
-                # 有文本层：本地 pypdf 快速提取（省 Transform API、快）
+                # Extract searchable PDFs locally without hosted layout analysis.
                 n, document_id = ingest_plain(path, investigation_id)
             elif ext == ".pdf":
-                # 扫描件/图纸：无文本层，超出 PRD 范围（非知识文档），跳过
-                print(f"[skip] {fname} (扫描件/无文本层，跳过)")
+                # Skip scanned documents that have no searchable text layer.
+                print(f"[skip] {fname} (scanned PDF or missing text layer)")
                 continue
             else:
                 n, document_id = ingest_plain(path, investigation_id)

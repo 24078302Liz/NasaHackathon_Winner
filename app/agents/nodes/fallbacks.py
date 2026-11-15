@@ -1,4 +1,4 @@
-"""兜底节点：弱证据 / 非法问题。"""
+"""Fallback responses for insufficient evidence and invalid questions."""
 from __future__ import annotations
 
 from app.agents.state import GraphState

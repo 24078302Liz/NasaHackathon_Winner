@@ -1,9 +1,9 @@
-# Milvus standalone（标准版）本地开发环境 —— Apple Silicon (arm64) 可用
-# 用法：docker compose -f docker-compose.milvus.yml up -d
+# Milvus standalone local development stack; supports Apple Silicon (arm64).
+# Usage: docker compose -f docker-compose.milvus.yml up -d
 #
-# 三个镜像均已实测存在且支持 arm64：
+# Container images used by this development stack:
 #   - quay.io/coreos/etcd:v3.5.25
-#   - milvusdb/minio:RELEASE.2024-12-18T13-15-44Z   ← 关键：minio 官方 fork，旧 minio/minio tag 已移除
+#   - milvusdb/minio:RELEASE.2024-12-18T13-15-44Z (Milvus-maintained MinIO image)
 #   - milvusdb/milvus:v2.5.12
 services:
   etcd:

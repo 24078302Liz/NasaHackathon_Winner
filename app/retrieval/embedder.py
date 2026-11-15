@@ -1,4 +1,4 @@
-"""稠密向量编码：HuggingFace BGE（默认 BAAI/bge-m3，1024 维）。"""
+"""Encode dense embeddings with HuggingFace BGE; default BGE-M3 uses 1024 dimensions."""
 from __future__ import annotations
 
 from app.config import settings
@@ -11,8 +11,8 @@ class Embedder:
         self._model = None
 
     def _load(self):
-        # 延迟导入：sentence-transformers 会拉取 torch，
-        # 未安装时不影响其他模块（如 FastAPI 路由）的导入。
+        # Import sentence-transformers and its torch dependency lazily.
+        # Other modules can load before the embedding package is installed.
         if self._model is None:
             from sentence_transformers import SentenceTransformer
 
@@ -32,5 +32,5 @@ class Embedder:
         return self.encode([text])[0]
 
 
-# 进程级单例：写入与查询必须使用同一个 embedder 与维度，切换模型需重建集合
+# Shared embedder: ingestion and retrieval must use the same model and dimensions. Rebuild the collection when changing them.
 embedder = Embedder()

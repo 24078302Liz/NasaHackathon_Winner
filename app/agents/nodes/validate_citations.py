@@ -1,4 +1,4 @@
-"""引用校验节点（纯代码，不调 LLM）：确保每个 citation 可解析到真实段落。"""
+"""Resolve citation IDs against retrieved passages without calling a model."""
 from __future__ import annotations
 
 import re
@@ -19,7 +19,7 @@ def validate_citations(state: GraphState) -> GraphState:
     for token in CITATION_RE.findall(answer):
         p = by_id.get(token)
         if p is None or p["evidence_id"] in seen:
-            continue  # 无法解析的引用（潜在幻觉）直接丢弃
+            continue  # Ignore unresolved or duplicate citation records.
         seen.add(p["evidence_id"])
         citations.append({
             "evidence_id": p["evidence_id"],

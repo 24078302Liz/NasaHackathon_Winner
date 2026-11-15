@@ -1,14 +1,14 @@
-"""基于 unstructured.io 的 PDF 处理流水线（切片前的清洗与结构化）。
+"""PDF processing with Unstructured: cleaning and structuring before chunking.
 
-流程：partition_pdf(strategy="hi_res") → build_clean_elements() → 交给 chunk_by_title()
+Flow: partition_pdf(strategy="hi_res") -> build_clean_elements() -> chunk_by_title()
 
-标题层级：unstructured 不提取字体大小（hi_res 的 category_depth 只是 0/None），
-本模块用 PyMuPDF(fitz) 独立提取每行字号，以正文众数为基准、比正文大的字号降序分档，
-得到「标题文本 → 层级」映射，供标题栈使用（一级标题字号 > 二级 > 三级）。
+Unstructured hi_res does not extract font sizes; category_depth is only 0 or None.
+This module uses PyMuPDF (fitz) to extract line font sizes relative to the modal body size.
+Larger font sizes define descending heading levels for the heading stack.
 
-本模块只产出 clean_elements，【不在此处做 chunk 分块】，也【绝不把 elements 合并成大字符串】。
+This module returns clean_elements without chunking or merging elements into one large string.
 
-依赖：unstructured + unstructured-client + pymupdf（托管 API，无需本地模型与 poppler/tesseract）。
+Dependencies: unstructured, unstructured-client, and pymupdf; hosted parsing needs no local OCR models.
 """
 from __future__ import annotations
 
@@ -16,10 +16,10 @@ import re
 from collections import Counter
 from typing import TYPE_CHECKING
 
-if TYPE_CHECKING:  # 仅类型检查用，运行时懒加载
+if TYPE_CHECKING:  # Type checking only; imports are lazy at runtime
     from unstructured.documents.elements import Element
 
-# ── 过滤规则（要求 1）──
+# Filtering rules (requirement 1)
 DROP_CATEGORIES = {"Header", "Footer", "Image", "PageBreak"}
 TOC_TITLES = {"table of contents", "contents"}
 REFERENCE_TITLES = {
@@ -34,34 +34,34 @@ ACRONYM_TITLES = {
 AD_KEYWORDS = ("complete iss researcher", "researcher's guide series")
 TITLE_BLACKLIST = {"the lab is open"}
 
-# 正文类：需要拼标题栈前缀
+# Body elements receive the heading stack prefix
 BODY_CATEGORIES = {"NarrativeText", "FigureCaption", "ListItem", "Text", "UncategorizedText"}
 
 
 def partition_pdf_hi_res(path: str):
-    """hi_res 分区（Unstructured 托管 API，禁止 auto）。未配置 key 时给出明确提示。"""
+    """Partition with hosted Unstructured hi_res; require an API key and never use auto."""
     from app.config import settings
 
     if not settings.unstructured_api_key:
         raise RuntimeError(
-            "未配置 UNSTRUCTURED_API_KEY。本项目使用 Unstructured 托管 API，"
-            "请在 backend/.env 里填写 UNSTRUCTURED_API_KEY。"
+            "UNSTRUCTURED_API_KEY is not configured. This project uses the hosted Unstructured API. "
+            "Set UNSTRUCTURED_API_KEY in your backend .env file."
         )
     return _partition_via_api(path)
 
 
 def _partition_via_api(path: str):
-    """托管 API（Unstructured Transform）：云端 Parse，本地只装 unstructured-transform-client。
+    """Parse through hosted Unstructured Transform using the local transform client.
 
-    返回 Element 列表（用 elements_from_dicts 把 Parse 返回的 element dict 转回 Element）。
-    默认 server_url 即 https://transform.unstructured.io。
+    Convert returned element dictionaries to Element instances with elements_from_dicts.
+    The default server URL is https://transform.unstructured.io.
     """
     from unstructured.staging.base import elements_from_dicts
     from unstructured_transform_client import TransformClient
 
     from app.config import settings
 
-    client_kwargs = {"timeout_seconds": 960}  # 略大于服务端默认 900s 等待
+    client_kwargs = {"timeout_seconds": 960}  # Exceeds the server default wait of 900 seconds
     if settings.unstructured_api_key:
         client_kwargs["api_key"] = settings.unstructured_api_key
     if settings.unstructured_api_url:
@@ -73,17 +73,17 @@ def _partition_via_api(path: str):
     elements = getattr(result, "elements", None)
     if elements is None:
         raise RuntimeError(
-            "Unstructured Parse 未返回 elements（可能仍在处理中）。请稍后重试或增大 timeout_seconds。"
+            "Unstructured Parse returned no elements. Processing may still be in progress; retry or increase timeout_seconds."
         )
-    # Transform SDK 返回的是 Pydantic 模型（不是 dict），先转成 dict 再交给 elements_from_dicts
+    # Convert SDK Pydantic models to dictionaries before elements_from_dicts
     dicts = []
     for e in elements:
         d = e.model_dump() if hasattr(e, "model_dump") else e
         if isinstance(d, dict):
             meta = d.get("metadata")
             if isinstance(meta, dict):
-                # 删除值为 None 的字段（如 coordinates=null），
-                # 避免 ElementMetadata.from_dict 对 None 调 .get 报错
+                # Remove fields whose values are None, for example coordinates
+                # Prevent ElementMetadata.from_dict from calling .get on None
                 d["metadata"] = {k: v for k, v in meta.items() if v is not None}
         dicts.append(d)
     return elements_from_dicts(dicts)
@@ -94,17 +94,17 @@ def _normalize(text: str) -> str:
 
 
 def extract_title_levels(path: str) -> dict[str, int]:
-    """用 PyMuPDF 提取字号，排除封面/封底，按相对正文字号分层。
+    """Extract font sizes with PyMuPDF, excluding cover pages, relative to body text.
 
-    - 正文基准 = 出现最多的字号（众数）
-    - 字号 >= 正文 1.5x → 一级（章）；>= 1.2x → 二级（节）；> 正文 → 三级（实验名）
-    - 排除 page 1（封面）与最后 2 页（封底/丛书广告），避免大字号干扰分档
+    - Use the most frequent font size as the body baseline.
+    - At least 1.5x body size: level 1; at least 1.2x: level 2; above body size: level 3.
+    - Exclude the cover and final two pages to avoid oversized cover or advertisement text.
     """
     import fitz  # PyMuPDF
 
     doc = fitz.open(path)
     total = doc.page_count
-    # 排除封面（p1）与最后 3 页（封底丛书广告 + 目录 + 可能的空白尾页）
+    # Exclude the cover and final three pages: advertisements, contents, or blank pages
     skip_pages = {1, total, total - 1, total - 2}
     lines: list[tuple[str, float]] = []
     try:
@@ -130,7 +130,7 @@ def extract_title_levels(path: str) -> dict[str, int]:
     mapping: dict[str, int] = {}
     for text, size in lines:
         r = round(size, 1)
-        if r <= body_size:  # 字号不大于正文，不是标题
+        if r <= body_size:  # Body-size text is not a heading
             continue
         ratio = r / body_size
         if ratio >= 1.5:
@@ -145,16 +145,16 @@ def extract_title_levels(path: str) -> dict[str, int]:
 
 
 def _clean_text(text: str) -> str:
-    """要求 4：只修复断词与压缩换行，严禁词干/停用词/翻译。"""
-    text = re.sub(r"(\w+)-\n(\w+)", r"\1\2", text)   # 修复跨行断词 flammabil-\nity → flammability
-    text = re.sub(r"\n{3,}", "\n\n", text)            # 连续换行压缩为 2 个，保留段落分隔
+    """Requirement 4: repair hyphenation and compress newlines; no stemming, stopword removal, or translation."""
+    text = re.sub(r"(\w+)-\n(\w+)", r"\1\2", text)   # Join words hyphenated across lines
+    text = re.sub(r"\n{3,}", "\n\n", text)            # Preserve paragraph breaks with two newlines
     return text
 
 
 def _title_level(el, title_levels: dict[str, int] | None = None) -> int:
-    """推断标题层级 1/2/3。
+    """Infer heading levels 1, 2, or 3.
 
-    优先级：字体字号映射（fitz）> metadata.category_depth > 编号模式 > 启发式。
+    Priority: font mapping, metadata.category_depth, numbering patterns, then heuristics.
     """
     if title_levels:
         level = title_levels.get(_normalize(el.text))
@@ -177,7 +177,7 @@ def _is_ad(text: str) -> bool:
 
 
 def _table_to_narrative(table) -> str:
-    """要求 2：把表格 HTML 转成可读的行文本（单元格用 | 分隔）。"""
+    """Requirement 2: convert HTML tables to readable rows with pipe-separated cells."""
     html = getattr(table.metadata, "text_as_html", None) or table.text or ""
     if "<tr" in html.lower():
         lines = []
@@ -198,16 +198,16 @@ def build_clean_elements(
     source_url: str = "",
     title_levels: dict[str, int] | None = None,
 ):
-    """要求 1/2/3/4/5：过滤 → 表格处理 → 标题栈拼接 → 清洗 → 挂元数据。
+    """Requirements 1-5: filter, process tables, prepend headings, clean, and attach metadata.
 
-    返回 clean_elements（Element 列表）。不调用任何 chunk 分块函数。
+    Return clean_elements without calling any chunking functions.
     """
     from unstructured.documents.elements import NarrativeText
 
     clean = []
     title_stack: list[str] = []
     state = "body"  # body | toc | references | acronyms
-    toc_reference: list[str] = []  # 目录标题仅内存参考，不入库
+    toc_reference: list[str] = []  # Contents headings are in-memory references only
 
     for el in elements:
         category = getattr(el, "category", None)
@@ -262,7 +262,7 @@ def build_clean_elements(
             continue
 
         if category == "Table":
-            clean.append(el)  # 原始 Table（text_as_html）供溯源，不改 text
+            clean.append(el)  # Preserve the original table and text_as_html for provenance
             prefix = "->".join(title_stack) + "->" if title_stack else ""
             narrative = NarrativeText(text=_clean_text(prefix + _table_to_narrative(el)))
             clean.append(narrative)
@@ -271,7 +271,7 @@ def build_clean_elements(
         el.text = _clean_text(el.text)
         clean.append(el)
 
-    # 要求 5：挂载全局元数据（page_number 已由 unstructured 保留）
+    # Requirement 5: attach global metadata; Unstructured already retains page_number
     for el in clean:
         setattr(el.metadata, "investigation_id", investigation_id)
         setattr(el.metadata, "document_id", document_id)
@@ -287,7 +287,7 @@ def process_pdf(
     document_id: str,
     source_url: str = "",
 ):
-    """组合：提取字号层级 + partition(hi_res) + build_clean_elements。"""
+    """Combine font hierarchy extraction, hi_res partitioning, and build_clean_elements."""
     title_levels = extract_title_levels(path)
     elements = partition_pdf_hi_res(path)
     return build_clean_elements(
@@ -306,9 +306,9 @@ def chunk_elements(
     new_after_n_chars: int = 1000,
     overlap: int = 150,
 ):
-    """用 chunk_by_title 对 clean_elements 切片，返回 CompositeElement 列表。
+    """Chunk clean_elements by title and return CompositeElement instances.
 
-    不在此处写库；写库交给 indexer.insert_passages。
+    Database writes belong to indexer.insert_passages.
     """
     from unstructured.chunking.title import chunk_by_title
 
@@ -317,7 +317,7 @@ def chunk_elements(
         max_characters=max_characters,
         new_after_n_chars=new_after_n_chars,
         overlap=overlap,
-        combine_text_under_n_chars=200,   # 太短的段合并到前一块，避免碎片
+        combine_text_under_n_chars=200,   # Combine short sections to reduce fragmentation
     )
 
 
@@ -329,10 +329,10 @@ def chunk_to_passage(
     document_id: str,
     source_url: str = "",
 ) -> dict:
-    """把一个 CompositeElement chunk 转成 passage dict（不含 dense_vector）。
+    """Convert a CompositeElement chunk to a passage dictionary without dense_vector.
 
-    dense_vector 由 indexer.insert_passages 统一用 BGE 生成；sparse 由 Milvus BM25 生成。
-    结构化实验字段（oxygen/airflow/...）此阶段不抽表格数值，先置 None。
+    indexer.insert_passages computes BGE dense vectors; Milvus BM25 computes sparse vectors.
+    Structured experimental fields remain None; table values are not extracted at this stage.
     """
     page = getattr(chunk.metadata, "page_number", None)
     return {

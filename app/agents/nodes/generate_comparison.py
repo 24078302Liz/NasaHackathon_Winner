@@ -1,4 +1,4 @@
-"""对比生成节点：条件差异优先于跨研究结论。"""
+"""Compare experimental conditions before drawing cross-study conclusions."""
 from __future__ import annotations
 
 from app.agents.prompts import COMPARE_SYSTEM
@@ -17,7 +17,7 @@ def _group_by_investigation(passages: list[dict]) -> dict[str, list[dict]]:
 def generate_comparison(state: GraphState) -> GraphState:
     selected = state.get("selected_ids") or []
 
-    # 1. 结构化对比行（纯代码，读 SQLite 的 ExperimentalCondition / ReportedFinding）
+    # 1. Build structured comparison rows from SQLite condition and finding records.
     structured: list[dict] = []
     if len(selected) == 2:
         from app.retrieval.store import build_structured_comparison
@@ -31,28 +31,28 @@ def generate_comparison(state: GraphState) -> GraphState:
         state["evidence_status"] = "insufficient"
         return state
 
-    # 2. LLM 基于检索证据生成跨研究结论文字
+    # 2. Generate a cross-study explanation from retrieved passages.
     groups = _group_by_investigation(state.get("passages") or [])
 
     parts = []
     for iid, passages in groups.items():
         snippets = "\n\n".join(f"[{p['evidence_id']}] {p['text'][:600]}" for p in passages[:8])
-        parts.append(f"调查 {iid}：\n{snippets}")
+        parts.append(f"Investigation {iid}:\n{snippets}")
     context = "\n\n".join(parts)
 
-    target = " 与 ".join(selected)
+    target = " and ".join(selected)
     llm = get_llm(temperature=0.0)
-    prompt = COMPARE_SYSTEM + "\n\n对比目标：" + target + "\n\n证据段落：\n" + context
+    prompt = COMPARE_SYSTEM + "\n\nComparison targets: " + target + "\n\nEvidence passages:\n" + context
     try:
         raw = llm.invoke(prompt)
         answer = raw.content if hasattr(raw, "content") else str(raw)
     except Exception as exc:
-        # LLM 超时/失败时，结构化对比行（FR04 核心）仍然返回，结论文字降级
+        # Preserve structured rows when model generation fails or times out.
         answer = (
-            "跨研究结论生成失败（LLM 不可用或超时）。结构化对比见 comparison 字段。"
+            "Cross-study explanation unavailable because the model failed or timed out. See the comparison field for structured records."
         )
 
     state["answer"] = answer
-    state["comparison"] = structured  # 结构化对比行（FR04）
+    state["comparison"] = structured  # Structured comparison rows (FR04).
     state["evidence_status"] = "sufficient"
     return state

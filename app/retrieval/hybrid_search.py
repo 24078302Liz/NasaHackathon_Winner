@@ -1,4 +1,4 @@
-"""混合检索：稠密（语义）+ 稀疏（BM25 关键词）双路召回 + RRF 重排。"""
+"""Combine dense semantic retrieval and sparse BM25 retrieval with reciprocal-rank fusion."""
 from __future__ import annotations
 
 from pymilvus import AnnSearchRequest, RRFRanker
@@ -28,7 +28,7 @@ OUTPUT_FIELDS = [
 
 
 def build_filter_expr(filters: dict | None) -> str | None:
-    """把结构化过滤条件转成 Milvus 布尔表达式（确定性过滤，不依赖向量）。"""
+    """Build deterministic Milvus filter expressions from structured filters."""
     if not filters:
         return None
     parts: list[str] = []
@@ -50,7 +50,7 @@ def hybrid_search(
     top_k: int | None = None,
     rerank_k: int = 60,
 ):
-    """返回命中段落列表（pymilvus 的 hits）。"""
+    """Return the retrieved pymilvus hits."""
     top_k = top_k or settings.top_k
     collection = get_collection()
 
@@ -65,9 +65,9 @@ def hybrid_search(
         expr=expr,
     )
     sparse_req = AnnSearchRequest(
-        data=[query],  # BM25 function 按全文解析 query
+        data=[query],  # BM25 processes the query text.
         anns_field="sparse_vector",
-        param={"metric_type": "BM25"},  # BM25 function 输出字段检索必须用 BM25
+        param={"metric_type": "BM25"},  # BM25-generated fields require the BM25 metric.
         limit=top_k,
         expr=expr,
     )

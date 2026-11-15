@@ -1,4 +1,4 @@
-"""搜索路由：POST /api/search。"""
+"""Search endpoint: POST /api/search."""
 from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException
@@ -13,7 +13,7 @@ MAX_QUESTION_LEN = 500
 
 
 def _build_evidence(passages: list[dict]) -> list[dict]:
-    """把检索到的段落转成 Evidence 字段结构。"""
+    """Convert retrieved passages to the Evidence response structure."""
     return [
         {
             "evidence_id": p.get("evidence_id", ""),

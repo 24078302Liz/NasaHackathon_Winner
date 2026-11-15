@@ -1,7 +1,7 @@
-"""应用配置：统一从环境变量 / .env 读取。
+"""Central application settings loaded from environment variables and .env.
 
-所有配置项在此集中定义，通过 `settings` 单例访问。
-凭证一律走环境变量，不提交到 Git（见 .env.example）。
+Access settings through the shared settings instance.
+Keep credentials in environment variables and out of Git; see .env.example.
 """
 from functools import lru_cache
 
@@ -16,11 +16,11 @@ class Settings(BaseSettings):
         case_sensitive=False,
     )
 
-    # ── LLM（DeepSeek，OpenAI 兼容接口）──
+    # LLM (DeepSeek through an OpenAI-compatible API)
     llm_base_url: str = "https://api.deepseek.com/v1"
     llm_api_key: str = ""
-    llm_model: str = "deepseek-chat"        # 生成/摘要/对比 主模型
-    small_model: str = "deepseek-chat"      # 意图识别 / 证据打分 小模型
+    llm_model: str = "deepseek-chat"        # Answer and comparison generation model.
+    small_model: str = "deepseek-chat"      # Query analysis and evidence grading model.
     llm_timeout_seconds: float = 45.0
 
     # ── Embedding（HuggingFace BGE）──
@@ -29,9 +29,9 @@ class Settings(BaseSettings):
     embedding_device: str = "cpu"
     embedding_normalize: bool = True
 
-    # ── Unstructured（托管 API；不填则用本地开源版）──
+    # Unstructured hosted API settings
     unstructured_api_key: str = ""
-    unstructured_api_url: str = ""   # 可选，留空用官方 API
+    unstructured_api_url: str = ""   # Empty uses the provider default endpoint.
 
     # ── Milvus ──
     milvus_host: str = "localhost"
@@ -39,12 +39,12 @@ class Settings(BaseSettings):
     milvus_collection: str = "flame_evidence"
     milvus_alias: str = "default"
 
-    # ── 结构化存储（SQLite；经 SQLAlchemy 可切 MySQL）──
+    # Structured storage (SQLite by default; SQLAlchemy supports other databases)
     database_url: str = "sqlite:///./data/flame.db"
 
-    # ── 检索 ──
+    # Retrieval
     top_k: int = 10
-    retrieval_score_threshold: float = 0.0  # 段落检索分数低于此值视为弱证据
+    retrieval_score_threshold: float = 0.0  # Scores below this threshold indicate weak evidence.
 
 
 @lru_cache
