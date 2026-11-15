@@ -19,4 +19,6 @@ to the API's `CORS_ALLOWED_ORIGINS`. Never add the LLM API key to frontend files
 
 The Vercel page cannot reach a FastAPI process running only on a developer laptop.
 Deploy the backend and populate its database/vector index before expecting live
-search results. Without a configured API, the page retains curated reference browsing.
+search results. The investigation library and search now require the API; if the
+API URL is missing or the service is unavailable, the page shows an error and a
+Retry action instead of substituting local mock records.

@@ -3,12 +3,11 @@
 const $ = (s, r = document) => r.querySelector(s);
 const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const API_BASE = (window.FLAME_API_BASE_URL || document.querySelector('meta[name="flame-api-base"]')?.content || (['localhost','127.0.0.1'].includes(location.hostname) ? 'http://127.0.0.1:8000' : '')).replace(/\/$/, '');
-const localStudies = INVESTIGATIONS;
-let studies = [...localStudies], searchResults = [], selected = [], filter = 'all', query = '', searchMode = 'curated', lastComparison = null;
+let studies = [], searchResults = [], selected = [], filter = 'all', query = '', lastComparison = null;
+let libraryLoading = false, libraryError = null;
 let saved = new Set(JSON.parse(localStorage.getItem('flame-saved') || '[]'));
-const byId = id => studies.find(s => s.id === id) || localStudies.find(s => s.id === id);
+const byId = id => studies.find(s => s.id === id);
 const keyFor = id => String(id || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-const localFor = id => localStudies.find(s => keyFor(s.id) === keyFor(id) || keyFor(s.name) === keyFor(id) || (keyFor(id)==='saffire' && keyFor(s.name)==='saffirei'));
 const readApi = async (path, options) => {
   if (!API_BASE) throw new Error('API 尚未配置');
   const response = await fetch(`${API_BASE}${path}`, {headers:{'Content-Type':'application/json', ...(options?.headers || {})}, ...options});
@@ -27,15 +26,15 @@ function requestErrorMessage(error, action) {
   return `${action}失败${error.status ? `（${error.status}）` : ''}：${error.message}`;
 }
 function toast(message) { const el = $('#toast'); if (el) { el.textContent = message; el.classList.add('show'); setTimeout(() => el.classList.remove('show'), 3200); } }
-function modeLabel() { const pill = $('.demo-pill'); if (pill) pill.innerHTML = `<span></span> ${searchMode === 'api' ? 'Live research API' : 'Curated reference mode'}`; }
+function modeLabel() { const pill = $('.demo-pill'); if (pill) pill.innerHTML = `<span></span> ${libraryLoading ? 'Connecting to research API…' : libraryError ? 'Research API unavailable' : 'Live research API'}`; }
 function studyFromApi(item) {
-  const local = localFor(item.investigation_id) || {};
   const title = item.title || item.investigation_id;
-  return {...local, id:item.investigation_id, name:local.name || title, full:local.full || title,
-    objective:item.objective || local.objective || 'Objective not yet extracted.',
-    description:local.description || item.objective || 'NASA investigation in the connected research corpus.',
-    purpose:local.purpose || 'prevention', phase:local.phase || 'solid',
-    source:local.source || {id:item.investigation_id,title, publisher:'NASA source record',year:'',doc:'',url:item.source_url || '#',locator:'Investigation record',note:item.objective || '',reviewed:'API record'},
+  const materials = Array.isArray(item.materials) ? item.materials.join(', ') : item.materials || '';
+  return {id:item.investigation_id, name:title, full:title,
+    objective:item.objective || 'Objective not yet extracted.', research_focus:item.research_focus || '',
+    materials, description:item.objective || item.research_focus || 'NASA investigation in the connected research corpus.',
+    purpose:item.research_focus || 'NASA investigation', phase:materials || 'Research record',
+    source:{id:item.investigation_id,title, publisher:'NASA Physical Sciences Informatics',year:'',doc:item.doi || '',url:item.source_url || '#',locator:'Investigation record',note:item.research_focus || item.objective || '',reviewed:'API record'},
     api:item};
 }
 function card(s, rank) {
@@ -51,11 +50,13 @@ function visibleStudies() {
 }
 function renderCards(items = visibleStudies()) {
   const cards = $('#cards'); if (!cards) return;
+  if (libraryLoading) { $('#overviewStudyCount').textContent=$('#libraryStudyCount').textContent=$('#navStudyCount').textContent='…'; $('#resultCount').textContent='Loading…'; cards.innerHTML='<div class="notice" role="status">Loading investigations from the research API…</div>'; return; }
+  if (libraryError) { $('#overviewStudyCount').textContent=$('#libraryStudyCount').textContent=$('#navStudyCount').textContent='—'; $('#resultCount').textContent='Unavailable'; cards.innerHTML=`<div class="notice" role="alert"><strong>Could not load investigations</strong><p>${esc(libraryError)}</p><button type="button" class="secondary" id="retryLibrary">Retry</button></div>`; return; }
   const studyCount = String(studies.length).padStart(2, '0');
   $('#overviewStudyCount').textContent = studyCount;
   $('#libraryStudyCount').textContent = studyCount;
   $('#navStudyCount').textContent = studies.length;
-  cards.innerHTML = items.length ? items.map((s,i) => card(s,i+1)).join('') : '<div class="notice">No matching investigation. Try another question or clear the filters.</div>';
+  cards.innerHTML = items.length ? items.map((s,i) => card(s,i+1)).join('') : studies.length ? '<div class="notice">No matching investigation. Try another question or clear the filters.</div>' : '<div class="notice" role="status">The API returned no investigations.</div>';
   $('#resultCount').textContent = `${items.length} investigation${items.length===1?'':'s'}`;
 }
 async function renderDetail(id) {
@@ -74,20 +75,20 @@ async function renderDetail(id) {
   $('#detailDialog').showModal();
 }
 async function loadLibrary() {
-  if (!API_BASE) { modeLabel(); renderCards(); return; }
+  libraryLoading = true; libraryError = null; modeLabel(); renderCards();
   try {
     const records = await readApi('/api/investigations');
-    if (Array.isArray(records) && records.length) studies = records.map(studyFromApi);
-    searchMode = 'api'; modeLabel(); renderCards();
-  } catch (error) { searchMode = 'curated'; modeLabel(); renderCards(); toast(`API 暂不可用，显示本地参考资料：${error.message}`); }
+    if (!Array.isArray(records)) throw new Error('调查列表 API 返回格式无效');
+    studies = records.map(studyFromApi);
+  } catch (error) { studies=[]; libraryError=requestErrorMessage(error,'读取调查列表'); toast(libraryError); }
+  finally { libraryLoading=false; modeLabel(); renderCards(); }
 }
 async function search() {
   query = $('#query').value.trim(); if (!query) { renderCards(); return; }
-  if (!API_BASE) { searchMode = 'curated'; const q = query.toLowerCase(); const found = localStudies.filter(s => `${s.name} ${s.full} ${s.terms.join(' ')}`.toLowerCase().includes(q) || q.split(/\W+/).some(t=>t.length>2&&s.terms.some(x=>x.includes(t)))); searchResults=[]; renderCards(found); modeLabel(); toast('Curated keyword match; configure API to enable source-backed AI search.'); return; }
   const button = $('#searchForm button[type="submit"]'); button.disabled = true; button.textContent = 'Searching…';
   try {
     const result = await readApi('/api/search',{method:'POST',body:JSON.stringify({question:query})});
-    searchMode='api'; searchResults=result.investigations || [];
+    searchResults=result.investigations || [];
     const ranked = searchResults.map(studyFromApi); studies = [...new Map([...studies,...ranked].map(s=>[s.id,s])).values()];
     renderCards(ranked); modeLabel();
     const note = $('#searchNote'); note.hidden=false;
@@ -242,7 +243,7 @@ $('#openCompare').addEventListener('click',()=>{location.hash='compare';});
 $('#exportCompare').addEventListener('click',()=>{if(!lastComparison?.comparison?.length){toast('Load a comparison before exporting.');return;}const [a,b]=lastComparison.comparison;const q=v=>'"'+String(v??'').replace(/"/g,'""')+'"';const fields=[...new Set([...(a.fields||[]).map(f=>f.name),...(b.fields||[]).map(f=>f.name)])];const rows=[['Research field',a.title,b.title],...fields.map(name=>[name,a.fields.find(f=>f.name===name)?.value||'Not yet extracted',b.fields.find(f=>f.name===name)?.value||'Not yet extracted'])];const blob=new Blob([rows.map(r=>r.map(q).join(',')).join('\r\n')],{type:'text/csv;charset=utf-8'});const link=document.createElement('a');link.href=URL.createObjectURL(blob);link.download='flame-study-comparison.csv';link.click();setTimeout(()=>URL.revokeObjectURL(link.href),1000);});
 document.addEventListener('change',e=>{if(e.target.matches('[data-compare]')){const id=e.target.dataset.compare;if(e.target.checked){if(selected.length===2){e.target.checked=false;toast('Choose up to two investigations.');return;}selected.push(id);}else selected=selected.filter(x=>x!==id);updateSelection();}if(e.target.matches('[data-slot]')){const next=[...selected];next[Number(e.target.dataset.slot)]=e.target.value;selected=[...new Set(next.filter(Boolean))].slice(0,2);updateSelection();renderCompare();}});
 document.addEventListener('click',e=>{const detail=e.target.closest('[data-detail]');if(detail)renderDetail(detail.dataset.detail);const close=e.target.closest('[data-close]');if(close)close.closest('dialog').close();const save=e.target.closest('[data-save]');if(save){const id=save.dataset.save;saved.has(id)?saved.delete(id):saved.add(id);localStorage.setItem('flame-saved',JSON.stringify([...saved]));save.textContent=saved.has(id)?'★':'☆';save.classList.toggle('saved',saved.has(id));}});
-document.addEventListener('click',e=>{if(e.target.id==='retrySearch')search();if(e.target.matches('[data-retry-compare]'))renderCompare();});
+document.addEventListener('click',e=>{if(e.target.id==='retrySearch')search();if(e.target.id==='retryLibrary')loadLibrary();if(e.target.matches('[data-retry-compare]'))renderCompare();});
 $('#detailDialog').addEventListener('click',e=>{if(e.target===$('#detailDialog'))$('#detailDialog').close();});
 window.addEventListener('hashchange',setView);
 loadLibrary().then(()=>{renderSources();renderCards();setView();updateSelection();modeLabel();});
