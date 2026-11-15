@@ -11,6 +11,17 @@ MAX_CHARS = 1200
 OVERLAP = 150
 
 
+def _split_long(text: str, max_chars: int) -> list[str]:
+    """把超长文本硬切成不超过 max_chars 的块。"""
+    parts = []
+    while len(text) > max_chars:
+        parts.append(text[:max_chars])
+        text = text[max_chars:]
+    if text:
+        parts.append(text)
+    return parts
+
+
 def chunk_text(
     text: str,
     *,
@@ -23,6 +34,15 @@ def chunk_text(
     chunks: list[dict] = []
     buf = ""
     for para in paragraphs:
+        if len(para) > MAX_CHARS:
+            # 超长段落：先 flush buf，再硬切成多个块（避免超过 Milvus 字段长度限制）
+            if buf.strip():
+                chunks.append(_make(buf, document_id, investigation_id, source_url, len(chunks)))
+                buf = ""
+            for sub in _split_long(para, MAX_CHARS):
+                chunks.append(_make(sub, document_id, investigation_id, source_url, len(chunks)))
+            continue
+
         if buf and len(buf) + len(para) + 1 > MAX_CHARS:
             chunks.append(_make(buf, document_id, investigation_id, source_url, len(chunks)))
             # 简单重叠：保留末尾 OVERLAP 字符，缓解跨块语义断裂

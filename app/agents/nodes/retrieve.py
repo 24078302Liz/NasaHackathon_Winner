@@ -46,17 +46,46 @@ def _hit_to_passage(hit) -> Passage:
 
 
 def _rank_investigations(passages: list[Passage]) -> list[dict]:
-    """按调查聚合：命中数 + 最高分，返回排序后的调查摘要（最多 3 个）。"""
+    """按调查聚合，返回文档要求的排序记录。
+
+    字段：identity / rank / hits / best_score / score_label /
+    matched_evidence_ids / relevance_explanation。
+    """
     agg: dict[str, dict] = {}
     for p in passages:
         iid = p["investigation_id"]
         if not iid:
             continue
-        a = agg.setdefault(iid, {"investigation_id": iid, "hits": 0, "best_score": 0.0})
+        a = agg.setdefault(iid, {
+            "identity": iid,
+            "hits": 0,
+            "best_score": 0.0,
+            "matched_evidence_ids": [],
+            "snippets": [],
+        })
         a["hits"] += 1
         a["best_score"] = max(a["best_score"], p["retrieval_score"])
+        eid = p.get("evidence_id")
+        if eid and eid not in a["matched_evidence_ids"]:
+            a["matched_evidence_ids"].append(eid)
+        snippet = (p.get("text") or "").strip()
+        if snippet and len(a["snippets"]) < 2:
+            a["snippets"].append(snippet[:120])
+
     ranked = sorted(agg.values(), key=lambda x: (-x["hits"], -x["best_score"]))
-    return ranked[:3]
+    result = []
+    for rank, r in enumerate(ranked[:3], start=1):
+        result.append({
+            "identity": r["identity"],
+            "investigation_id": r["identity"],  # 兼容前端旧字段名
+            "rank": rank,
+            "hits": r["hits"],
+            "best_score": round(r["best_score"], 4),
+            "score_label": "retrieval_score",  # 明确标注为检索分数（非概率）
+            "matched_evidence_ids": r["matched_evidence_ids"],
+            "relevance_explanation": " | ".join(r["snippets"]),
+        })
+    return result
 
 
 def retrieve(state: GraphState) -> GraphState:
@@ -65,6 +94,13 @@ def retrieve(state: GraphState) -> GraphState:
         filters=state.get("filters"),
         top_k=settings.top_k,
     )
+    if not hits and state.get("filters"):
+        # 过滤后无结果，回退到不过滤再检索一次（避免过滤条件误伤）
+        hits = hybrid_search(
+            query=state["question"],
+            filters=None,
+            top_k=settings.top_k,
+        )
     passages = [_hit_to_passage(h) for h in hits]
     state["passages"] = passages
     state["ranked_investigations"] = _rank_investigations(passages)

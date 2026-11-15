@@ -15,22 +15,20 @@ def _group_by_investigation(passages: list[dict]) -> dict[str, list[dict]]:
 
 
 def generate_comparison(state: GraphState) -> GraphState:
-    groups = _group_by_investigation(state.get("passages") or [])
     selected = state.get("selected_ids") or []
 
-    if len(selected) != 2 or any(not groups.get(iid) for iid in selected):
-        state["answer"] = (
-            "Insufficient evidence to compare both investigations from the selected sources. "
-            "One or both investigations have no retrieved evidence passages."
-        )
-        state["comparison"] = []
-        state["evidence_status"] = "insufficient"
-        state["citations"] = []
-        return state
+    # 1. 结构化对比行（纯代码，读 SQLite 的 ExperimentalCondition / ReportedFinding）
+    structured: list[dict] = []
+    if len(selected) == 2:
+        from app.retrieval.store import build_structured_comparison
+
+        structured = build_structured_comparison(selected[0], selected[1])
+
+    # 2. LLM 基于检索证据生成跨研究结论文字
+    groups = _group_by_investigation(state.get("passages") or [])
 
     parts = []
-    for iid in selected:
-        passages = groups[iid]
+    for iid, passages in groups.items():
         snippets = "\n\n".join(f"[{p['evidence_id']}] {p['text'][:600]}" for p in passages[:8])
         parts.append(f"调查 {iid}：\n{snippets}")
     context = "\n\n".join(parts)
@@ -38,10 +36,16 @@ def generate_comparison(state: GraphState) -> GraphState:
     target = " 与 ".join(selected)
     llm = get_llm(temperature=0.0)
     prompt = COMPARE_SYSTEM + "\n\n对比目标：" + target + "\n\n证据段落：\n" + context
-    raw = llm.invoke(prompt)
-    answer = raw.content if hasattr(raw, "content") else str(raw)
+    try:
+        raw = llm.invoke(prompt)
+        answer = raw.content if hasattr(raw, "content") else str(raw)
+    except Exception as exc:
+        # LLM 超时/失败时，结构化对比行（FR04 核心）仍然返回，结论文字降级
+        answer = (
+            "跨研究结论生成失败（LLM 不可用或超时）。结构化对比见 comparison 字段。"
+        )
 
     state["answer"] = answer
-    state["comparison"] = []  # API 路由从结构化记录生成可比字段
+    state["comparison"] = structured  # 结构化对比行（FR04）
     state["evidence_status"] = "sufficient"
     return state

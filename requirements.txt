@@ -23,3 +23,6 @@ sentence-transformers
 pypdf                     # PDF 文本抽取
 python-docx               # docx 文本抽取
 beautifulsoup4            # HTML 文本抽取
+unstructured              # 核心库：elements_from_dicts（把 API 返回的 dict 转回 Element），很轻
+unstructured-transform-client>=0.18.18   # Unstructured Transform 托管 API SDK（需 Python 3.12+）
+pymupdf                   # 提取每行字号，用于标题层级判断（unstructured 不提供字体大小）

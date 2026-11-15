@@ -22,19 +22,16 @@ class Settings(BaseSettings):
     llm_model: str = "deepseek-chat"        # 生成/摘要/对比 主模型
     small_model: str = "deepseek-chat"      # 意图识别 / 证据打分 小模型
     llm_timeout_seconds: float = 45.0
-    cors_allowed_origins: list[str] = [
-        "https://winner-flame-in-freefall.vercel.app",
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-        "http://localhost:3000",
-        "http://127.0.0.1:3000",
-    ]
 
     # ── Embedding（HuggingFace BGE）──
     embedding_model: str = "BAAI/bge-m3"
     embedding_dim: int = 1024
     embedding_device: str = "cpu"
     embedding_normalize: bool = True
+
+    # ── Unstructured（托管 API；不填则用本地开源版）──
+    unstructured_api_key: str = ""
+    unstructured_api_url: str = ""   # 可选，留空用官方 API
 
     # ── Milvus ──
     milvus_host: str = "localhost"

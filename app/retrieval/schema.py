@@ -19,6 +19,22 @@ from pymilvus import (
 from app.config import settings
 
 DENSE_INDEX_PARAMS = {"M": 16, "efConstruction": 200}
+SPARSE_INDEX_PARAMS = {"index_type": "SPARSE_INVERTED_INDEX", "metric_type": "BM25"}
+
+
+def ensure_indexes(col: Collection) -> None:
+    """确保 dense 与 sparse 索引存在（幂等）。
+
+    注意：BM25 function 的输出字段，索引 metric_type 必须是 BM25（不是 IP）。
+    """
+    existing = {idx.field_name for idx in col.indexes}
+    if "dense_vector" not in existing:
+        col.create_index(
+            "dense_vector",
+            {"index_type": "HNSW", "metric_type": "COSINE", "params": DENSE_INDEX_PARAMS},
+        )
+    if "sparse_vector" not in existing:
+        col.create_index("sparse_vector", SPARSE_INDEX_PARAMS)
 
 
 def create_collection(name: str | None = None) -> Collection:
@@ -62,13 +78,6 @@ def create_collection(name: str | None = None) -> Collection:
     )
     col = Collection(name=name, schema=schema)
 
-    col.create_index(
-        "dense_vector",
-        {"index_type": "HNSW", "metric_type": "COSINE", "params": DENSE_INDEX_PARAMS},
-    )
-    col.create_index(
-        "sparse_vector",
-        {"index_type": "SPARSE_INVERTED_INDEX", "metric_type": "IP"},
-    )
+    ensure_indexes(col)
     col.load()
     return col

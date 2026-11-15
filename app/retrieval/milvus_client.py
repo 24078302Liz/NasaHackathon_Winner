@@ -36,5 +36,6 @@ def get_collection(name: str | None = None, create_if_missing: bool = True) -> C
             )
         return milvus_schema.create_collection(name)
     col = Collection(name)
+    milvus_schema.ensure_indexes(col)  # 幂等补建索引（修复历史 collection 缺 sparse 索引）
     col.load()
     return col
