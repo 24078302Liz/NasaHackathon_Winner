@@ -34,4 +34,9 @@ def validate_citations(state: GraphState) -> GraphState:
         })
 
     state["citations"] = citations
+    unresolved = [token for token in CITATION_RE.findall(answer) if token not in by_id]
+    if unresolved or (state.get("evidence_status") == "sufficient" and not citations):
+        state["evidence_status"] = "insufficient"
+        state["answer"] = "The generated answer could not be linked to valid source citations. Review the retrieved evidence or retry; no supported conclusion is available."
+        state["citations"] = []
     return state

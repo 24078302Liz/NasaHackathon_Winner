@@ -24,6 +24,13 @@ def generate_comparison(state: GraphState) -> GraphState:
 
         structured = build_structured_comparison(selected[0], selected[1])
 
+    if len(selected) != 2 or any(not any(p.get("investigation_id") == iid for p in state.get("passages", [])) for iid in selected):
+        state["answer"] = "Insufficient retrieved evidence for one or both investigations. Structured records alone do not establish a supported cross-study conclusion."
+        state["comparison"] = structured
+        state["citations"] = []
+        state["evidence_status"] = "insufficient"
+        return state
+
     # 2. LLM 基于检索证据生成跨研究结论文字
     groups = _group_by_investigation(state.get("passages") or [])
 
