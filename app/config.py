@@ -22,6 +22,12 @@ class Settings(BaseSettings):
     llm_model: str = "deepseek-chat"        # Answer and comparison generation model.
     small_model: str = "deepseek-chat"      # Query analysis and evidence grading model.
     llm_timeout_seconds: float = 45.0
+    workflow_timeout_seconds: float = 180.0
+    cors_origins: list[str] = [
+        "http://localhost:5500",
+        "http://127.0.0.1:5500",
+        "https://winner-flame-in-freefall.vercel.app",
+    ]
 
     # ── Embedding（HuggingFace BGE）──
     embedding_model: str = "BAAI/bge-m3"

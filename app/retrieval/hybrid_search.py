@@ -1,6 +1,8 @@
 """Combine dense semantic retrieval and sparse BM25 retrieval with reciprocal-rank fusion."""
 from __future__ import annotations
 
+import json
+
 from pymilvus import AnnSearchRequest, RRFRanker
 
 from app.config import settings
@@ -33,14 +35,17 @@ def build_filter_expr(filters: dict | None) -> str | None:
         return None
     parts: list[str] = []
     if filters.get("investigation_id"):
-        ids = ",".join(f'"{i}"' for i in filters["investigation_id"])
+        values = filters["investigation_id"]
+        if isinstance(values, str):
+            values = [values]
+        ids = ",".join(json.dumps(str(i)) for i in values)
         parts.append(f"investigation_id in [{ids}]")
     if filters.get("material"):
-        parts.append(f'material == "{filters["material"]}"')
+        parts.append(f'material == {json.dumps(str(filters["material"]))}')
     if filters.get("research_focus"):
-        parts.append(f'research_focus == "{filters["research_focus"]}"')
+        parts.append(f'research_focus == {json.dumps(str(filters["research_focus"]))}')
     if filters.get("gravity_condition"):
-        parts.append(f'gravity_condition == "{filters["gravity_condition"]}"')
+        parts.append(f'gravity_condition == {json.dumps(str(filters["gravity_condition"]))}')
     return " and ".join(parts) if parts else None
 
 

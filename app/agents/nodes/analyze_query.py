@@ -36,6 +36,8 @@ def analyze_query(state: GraphState) -> GraphState:
         qtype = "search"
 
     filters = parsed.get("filters") or {}
+    if not isinstance(filters, dict):
+        filters = {}
     selected_ids = [i for i in (parsed.get("selected_ids") or []) if i in VALID_INVESTIGATION_IDS]
 
     if qtype == "compare" and len(selected_ids) != 2:

@@ -2,6 +2,8 @@
 
 **An evidence-first research explorer for NASA microgravity combustion studies.**
 
+For submission materials and source/AI disclosures, see [SUBMISSION.md](SUBMISSION.md). For a single-address frontend and backend demonstration, see [RUN_AND_VERIFY.md](RUN_AND_VERIFY.md).
+
 Flame in Freefall helps researchers and curious readers search NASA combustion research, inspect the underlying evidence, and compare experimental contexts. Natural-language answers are generated from retrieved source passages, and citation records are checked against passages returned by retrieval. The system distinguishes reported information from evidence gaps; it is not a fire-safety prediction or operational tool.
 
 > **Architecture positioning:** The project uses modular, enterprise-oriented patterns—separated API, workflow, retrieval, storage, and ingestion layers; typed contracts; centralized configuration; and source-aware AI responses. It is currently a NASA Space Apps hackathon prototype, not a production-certified enterprise service. See [Production considerations](#production-considerations).
@@ -202,7 +204,7 @@ Settings are read from environment variables or `.env` through `app/config.py`.
 | `DATABASE_URL` | SQLAlchemy database URL | `sqlite:///./data/flame.db` |
 | `TOP_K` | Retrieval result limit | `10` |
 | `RETRIEVAL_SCORE_THRESHOLD` | Evidence grading threshold | `0.0` |
-The frontend API URL is set separately in `frontend/config.js` as `window.FLAME_API_BASE_URL`. Leave it empty for local development. For Vercel, set it to the deployed backend's public **HTTPS origin** (without a trailing slash). The current FastAPI configuration allows all CORS origins and enables credentials; restrict it to the deployed frontend origin and review credential handling before production use. Never place `LLM_API_KEY` in frontend code or public build variables.
+The frontend API URL is set separately in `frontend/config.js` as `window.FLAME_API_BASE_URL`. When FastAPI serves the frontend at `/`, its configuration marker selects the same origin automatically. For a separate Vercel frontend, set the deployed backend's public **HTTPS origin** (without a trailing slash). Configure allowed frontend origins with the `CORS_ORIGINS` environment variable as a JSON array. Credentialed cross-origin requests are disabled. Never place `LLM_API_KEY` in frontend code or public build variables.
 
 ## Project structure
 
@@ -243,9 +245,9 @@ This repository demonstrates an enterprise-oriented architecture, but additional
 - Deploy the FastAPI service, Milvus, and structured database to managed/secured infrastructure; a local laptop API is not reachable from Vercel.
 - Configure HTTPS, secrets management, authentication/authorization if needed, rate limiting, and suitable network boundaries.
 - Add structured logging, metrics, tracing, alerting, and operational health/readiness checks. The current `/health` endpoint is a basic liveness response.
-- Add automated unit/integration tests, a formal migration system, CI checks, backup/restore procedures, and ingestion monitoring.
+- Extend the included deterministic regression tests with live-corpus checks, a formal migration system, CI checks, backup/restore procedures, and ingestion monitoring.
 - Populate and validate the research corpus and structured test/finding records. The current CLI imports conditions from CSV and text passages from documents; it does not automatically extract structured findings from prose.
-- Restrict the wildcard CORS policy to known frontend origins and add consistent backend error mapping for workflow failures and timeouts.
+- Review configured CORS origins for your deployment. Workflow failures return 502 and request timeouts return 504; cancelling an async request may not immediately stop an already-running synchronous provider call.
 - Review source URLs, licensing, and metadata for each ingested record before public release.
 
 ## License

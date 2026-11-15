@@ -6,6 +6,7 @@ from fastapi import APIRouter, HTTPException
 from app.agents.graph import compiled_graph
 from app.agents.state import GraphState
 from app.api.schemas import SearchRequest, SearchResponse
+from app.api.workflow import run_workflow
 
 router = APIRouter()
 
@@ -41,7 +42,7 @@ async def search(req: SearchRequest):
         )
 
     initial: GraphState = {"question": question, "retry_count": 0}
-    final = await compiled_graph.ainvoke(initial)
+    final = await run_workflow(compiled_graph, initial)
 
     return SearchResponse(
         question=question,

@@ -5,12 +5,13 @@ const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;',
 const API_BASE = (window.FLAME_API_BASE_URL || document.querySelector('meta[name="flame-api-base"]')?.content || (['localhost','127.0.0.1'].includes(location.hostname) ? 'http://127.0.0.1:8000' : '')).replace(/\/$/, '');
 let studies = [], searchResults = [], selected = [], filter = 'all', query = '', lastComparison = null;
 let libraryLoading = false, libraryError = null;
-let saved = new Set(JSON.parse(localStorage.getItem('flame-saved') || '[]'));
+let saved;
+try { const ids = JSON.parse(localStorage.getItem('flame-saved') || '[]'); saved = new Set(Array.isArray(ids) ? ids : []); } catch { saved = new Set(); }
 const byId = id => studies.find(s => s.id === id);
 const keyFor = id => String(id || '').toLowerCase().replace(/[^a-z0-9]/g, '');
 const readApi = async (path, options) => {
   if (!API_BASE) throw new Error('The API URL is not configured');
-  const response = await fetch(`${API_BASE}${path}`, {headers:{'Content-Type':'application/json', ...(options?.headers || {})}, ...options});
+  const response = await fetch(`${API_BASE}${path}`, {...options, headers:{'Content-Type':'application/json', ...(options?.headers || {})}, signal:AbortSignal.timeout(190000)});
   if (!response.ok) {
     let payload = {};
     try { payload = await response.json(); } catch {}
@@ -41,8 +42,9 @@ function card(s, rank) {
   const result = searchResults.find(r => r.investigation_id === s.id);
   const snippet = result ? `<p class="card-description">${esc(result.relevance_explanation || s.description)}</p>` : `<p class="card-description">${esc(s.description || s.objective)}</p>`;
   const source = s.source || {};
+  const ranking = result ? `<p class="card-description">Rank ${esc(result.rank)} · ${esc(result.hits)} retrieved passages · relevance score ${esc(result.best_score)}. Retrieval relevance is not a safety rating.</p>` : '';
   const checked = selected.includes(s.id);
-  return `<article class="investigation-card"><div class="card-visual" style="background:${esc(s.bg || '#eaf0e7')};color:${esc(s.color || '#214e3a')}"><span class="study-logo">${esc((s.name || '?').slice(0,2))}</span><span class="tag">${rank ? `MATCH ${rank}` : esc(s.purpose || 'NASA investigation')}</span></div><div class="card-body"><div class="card-meta"><span class="pill">${esc(s.purpose || 'Research')}</span><span>${esc(source.id || s.id)}</span></div><h2 class="card-title">${esc(s.name || s.id)}</h2><p class="card-subtitle">${esc(s.full || s.title || '')}</p>${snippet}<div class="card-tags"><span>${esc(s.phase || 'NASA')}</span><span>Microgravity research</span></div><div class="card-bottom"><button class="detail-button" data-detail="${esc(s.id)}">Explore investigation →</button><label class="compare-check"><input type="checkbox" data-compare="${esc(s.id)}" ${checked?'checked':''}> Compare</label><button class="save-button ${saved.has(s.id)?'saved':''}" data-save="${esc(s.id)}" aria-label="${saved.has(s.id)?'Unsave':'Save'} ${esc(s.name)}">${saved.has(s.id)?'★':'☆'}</button></div></div></article>`;
+  return `<article class="investigation-card"><div class="card-visual" style="background:${esc(s.bg || '#eaf0e7')};color:${esc(s.color || '#214e3a')}"><span class="study-logo">${esc((s.name || '?').slice(0,2))}</span><span class="tag">${rank ? `MATCH ${rank}` : esc(s.purpose || 'NASA investigation')}</span></div><div class="card-body"><div class="card-meta"><span class="pill">${esc(s.purpose || 'Research')}</span><span>${esc(source.id || s.id)}</span></div><h2 class="card-title">${esc(s.name || s.id)}</h2><p class="card-subtitle">${esc(s.full || s.title || '')}</p>${snippet}${ranking}<div class="card-tags"><span>${esc(s.phase || 'NASA')}</span><span>Microgravity research</span></div><div class="card-bottom"><button class="detail-button" data-detail="${esc(s.id)}">Explore investigation →</button><label class="compare-check"><input type="checkbox" data-compare="${esc(s.id)}" ${checked?'checked':''}> Compare</label><button class="save-button ${saved.has(s.id)?'saved':''}" data-save="${esc(s.id)}" aria-label="${saved.has(s.id)?'Unsave':'Save'} ${esc(s.name)}">${saved.has(s.id)?'★':'☆'}</button></div></div></article>`;
 }
 function visibleStudies() {
   const q = $('#query')?.value.trim().toLowerCase() || '';
@@ -89,11 +91,11 @@ async function search() {
   try {
     const result = await readApi('/api/search',{method:'POST',body:JSON.stringify({question:query})});
     searchResults=result.investigations || [];
-    const ranked = searchResults.map(studyFromApi); studies = [...new Map([...studies,...ranked].map(s=>[s.id,s])).values()];
+    const ranked = searchResults.map(item => byId(item.investigation_id) || studyFromApi(item)); studies = [...new Map([...studies,...ranked].map(s=>[s.id,s])).values()];
     renderCards(ranked); modeLabel();
     const note = $('#searchNote'); note.hidden=false;
     const passages = result.evidence || [];
-    note.innerHTML = `<strong>${esc(result.evidence_status || 'Research response')}</strong><p>${esc(result.answer || 'No answer could be generated from the retrieved evidence.')}</p><small>${(result.citations||[]).map(c=>`[${esc(c.evidence_id)}] ${esc(c.source_url||c.document_id)}`).join(' · ') || 'No citations returned.'}</small>${passages.length?`<div class="api-evidence"><strong>Retrieved evidence (${passages.length})</strong>${passages.map(p=>`<article><small>${esc(p.evidence_id)} · ${esc(p.investigation_id)} · ${esc(p.page ? `page ${p.page}` : p.document_id)}</small><p>${esc(p.text)}</p>${p.source_url?`<a href="${esc(p.source_url)}" target="_blank" rel="noopener noreferrer">Open source ↗</a>`:''}</article>`).join('')}</div>`:'<p>No source passages were retrieved for this question.'}`;
+    note.innerHTML = `<strong>${esc(result.evidence_status || 'Research response')}</strong><div>${markdownAnswer(result.answer || 'No answer could be generated from the retrieved evidence.')}</div><small>${(result.citations||[]).map(c=>`[${esc(c.evidence_id)}] ${esc(c.source_url||c.document_id)}`).join(' · ') || 'No citations returned.'}</small>${passages.length?`<div class="api-evidence"><strong>Retrieved evidence (${passages.length})</strong>${passages.map(p=>`<article><small>${esc(p.evidence_id)} · ${esc(p.investigation_id)} · ${esc(p.page ? `page ${p.page}` : p.document_id)}</small><p>${esc(p.text)}</p>${p.source_url?`<a href="${esc(p.source_url)}" target="_blank" rel="noopener noreferrer">Open source ↗</a>`:''}</article>`).join('')}</div>`:'<p>No source passages were retrieved for this question.'}`;
   } catch (error) { const note=$('#searchNote'); note.hidden=false; const message=requestErrorMessage(error,'Search'); note.innerHTML=`<strong>Research request failed</strong><p role="alert">${esc(message)}. Your question has been preserved.</p><button type="button" class="secondary" id="retrySearch">Retry</button>`; toast(message); }
   finally { button.disabled=false; button.innerHTML='Search <span>→</span>'; }
 }
@@ -208,12 +210,15 @@ function renderCompare() {
   const records=[...studies];
   $('#compareSelectors').innerHTML=[0,1].map(i=>`<label class="select-box">INVESTIGATION ${i+1}<select data-slot="${i}"><option value="">Choose an investigation</option>${records.map(s=>`<option value="${esc(s.id)}" ${selected[i]===s.id?'selected':''}>${esc(s.name)}</option>`).join('')}</select></label>`).join('');
   $('#comparison').innerHTML='<div class="notice">Select two investigations to compare their available source records.</div>';
+  lastComparison = null;
   if(selected.length!==2)return;
   $('#comparison').innerHTML='<div class="notice" role="status">Loading source-backed comparison…</div>';
   (async()=>{
     try {
       if(!API_BASE) throw new Error('API not configured');
+      const requested = selected.join('|');
       const response=await readApi('/api/compare',{method:'POST',body:JSON.stringify({id_a:selected[0],id_b:selected[1]})});
+      if (requested !== selected.join('|')) return;
       const result=normalizeCompareResult(response); lastComparison=result; const [a,b]=result.comparison;
       $('#comparison').innerHTML=`<section class="notice"><strong>Evidence status: ${esc(result.evidence_status)}</strong><div class="compare-answer">${markdownAnswer(result.answer)}</div></section><div class="table-wrap"><table><thead><tr><th>Research field</th><th>${esc(a.title)}</th><th>${esc(b.title)}</th></tr></thead><tbody>${COMPARE_FIELDS.map((name,i)=>{const fa=a.fields[i],fb=b.fields[i];return `<tr><th>${esc(COMPARE_FIELD_LABELS[name])}</th><td>${esc(fa.value)}<small>${esc(fa.availability)}</small></td><td>${esc(fb.value)}<small>${esc(fb.availability)}</small></td></tr>`;}).join('')}</tbody></table></div>`;
     } catch(error) { const message=requestErrorMessage(error,'Comparison'); $('#comparison').innerHTML=`<div class="notice" role="alert"><strong>Comparison request failed</strong><p>${esc(message)}. Your selected investigations have been preserved.</p><button type="button" class="secondary" data-retry-compare>Retry</button></div>`; }
@@ -242,7 +247,7 @@ $('#clearSelection').addEventListener('click',()=>{selected=[];updateSelection()
 $('#openCompare').addEventListener('click',()=>{location.hash='compare';});
 $('#exportCompare').addEventListener('click',()=>{if(!lastComparison?.comparison?.length){toast('Load a comparison before exporting.');return;}const [a,b]=lastComparison.comparison;const q=v=>'"'+String(v??'').replace(/"/g,'""')+'"';const fields=[...new Set([...(a.fields||[]).map(f=>f.name),...(b.fields||[]).map(f=>f.name)])];const rows=[['Research field',a.title,b.title],...fields.map(name=>[name,a.fields.find(f=>f.name===name)?.value||'Not yet extracted',b.fields.find(f=>f.name===name)?.value||'Not yet extracted'])];const blob=new Blob([rows.map(r=>r.map(q).join(',')).join('\r\n')],{type:'text/csv;charset=utf-8'});const link=document.createElement('a');link.href=URL.createObjectURL(blob);link.download='flame-study-comparison.csv';link.click();setTimeout(()=>URL.revokeObjectURL(link.href),1000);});
 document.addEventListener('change',e=>{if(e.target.matches('[data-compare]')){const id=e.target.dataset.compare;if(e.target.checked){if(selected.length===2){e.target.checked=false;toast('Choose up to two investigations.');return;}selected.push(id);}else selected=selected.filter(x=>x!==id);updateSelection();}if(e.target.matches('[data-slot]')){const next=[...selected];next[Number(e.target.dataset.slot)]=e.target.value;selected=[...new Set(next.filter(Boolean))].slice(0,2);updateSelection();renderCompare();}});
-document.addEventListener('click',e=>{const detail=e.target.closest('[data-detail]');if(detail)renderDetail(detail.dataset.detail);const close=e.target.closest('[data-close]');if(close)close.closest('dialog').close();const save=e.target.closest('[data-save]');if(save){const id=save.dataset.save;saved.has(id)?saved.delete(id):saved.add(id);localStorage.setItem('flame-saved',JSON.stringify([...saved]));save.textContent=saved.has(id)?'★':'☆';save.classList.toggle('saved',saved.has(id));}});
+document.addEventListener('click',e=>{const detail=e.target.closest('[data-detail]');if(detail)renderDetail(detail.dataset.detail);const close=e.target.closest('[data-close]');if(close)close.closest('dialog').close();const save=e.target.closest('[data-save]');if(save){const id=save.dataset.save;saved.has(id)?saved.delete(id):saved.add(id);try { localStorage.setItem('flame-saved',JSON.stringify([...saved])); } catch { toast('Browser storage is unavailable; saved items will last for this session.'); }save.textContent=saved.has(id)?'★':'☆';save.classList.toggle('saved',saved.has(id));}});
 document.addEventListener('click',e=>{if(e.target.id==='retrySearch')search();if(e.target.id==='retryLibrary')loadLibrary();if(e.target.matches('[data-retry-compare]'))renderCompare();});
 $('#detailDialog').addEventListener('click',e=>{if(e.target===$('#detailDialog'))$('#detailDialog').close();});
 window.addEventListener('hashchange',setView);

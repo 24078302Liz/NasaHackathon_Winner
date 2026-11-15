@@ -36,16 +36,16 @@ def grade_evidence(state: GraphState) -> GraphState:
     )
     text = raw.content if hasattr(raw, "content") else str(raw)
 
-    grade = "sufficient"
+    grade = "insufficient"
     match = re.search(r"\{.*\}", text, re.DOTALL)
     if match:
         try:
             data = json.loads(match.group(0))
-            grade = data.get("grade", "sufficient")
+            grade = data.get("grade", "insufficient")
         except json.JSONDecodeError:
             pass
     if grade not in ("sufficient", "insufficient"):
-        grade = "sufficient"
+        grade = "insufficient"
 
     state["evidence_grade"] = grade
     return state

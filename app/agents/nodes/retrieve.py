@@ -94,13 +94,6 @@ def retrieve(state: GraphState) -> GraphState:
         filters=state.get("filters"),
         top_k=settings.top_k,
     )
-    if not hits and state.get("filters"):
-        # Retry without filters if the filtered search returns no results.
-        hits = hybrid_search(
-            query=state["question"],
-            filters=None,
-            top_k=settings.top_k,
-        )
     passages = [_hit_to_passage(h) for h in hits]
     state["passages"] = passages
     state["ranked_investigations"] = _rank_investigations(passages)
