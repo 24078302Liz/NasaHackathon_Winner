@@ -67,7 +67,7 @@ def hybrid_search(
     sparse_req = AnnSearchRequest(
         data=[query],  # BM25 function 按全文解析 query
         anns_field="sparse_vector",
-        param={"metric_type": "IP"},
+        param={"metric_type": "BM25"},  # BM25 function 输出字段检索必须用 BM25
         limit=top_k,
         expr=expr,
     )
